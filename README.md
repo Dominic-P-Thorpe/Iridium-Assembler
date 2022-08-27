@@ -16,16 +16,16 @@ Instructions fall into 3 categories: RRR-type, RRI-type, and RI-type, which are 
 
 The instruction set is laid out in the table below:
 
-| Mnem | Opcode | Format    | Example           | Description                       |
-|------|--------|-----------|-------------------|-----------------------------------|
-| ADD  | 000    | RRR-Type  | ADD $r0 $r1 $r2   | Ra = Rb + Rc                      |
-| ADDI | 001    | RRI-Type  | ADDI $r0 $zero 27 | Ra = Rb + Imm                     |
-| NAND | 010    | RRR-Type  | NAND $r0 $r0 $r1  | Ra = ¬(Rb & Rc)                   |
-| LUI  | 011    | RI-Type   | LUI $r0 0x1DE     | Bits 7-10 of Ra = Imm             |
-| SW   | 100    | RRI-Type  | SW $r0 $r1 50     | Value of RAM at Rb + Imm = Ra     |
-| LW   | 101    | RRI-Type  | LW $r0 $r1 .loc   | Ra = value of RAM at Rb + Imm     |
-| BEQ  | 110    | RRI-Type  | BEQ $r0 $r1 @loop | If Ra == Rb, branch to Imm        |
-| JAL  | 111    | RRI-Type* | JAL $r7 @pos      | Branch to addr in Rb, Ra = PC + 1 |
+| Mnem | Opcode | Format    | Example             | Description                       |
+|------|--------|-----------|---------------------|-----------------------------------|
+| ADD  | 000    | RRR-Type  | ADD $r0, $r1, $r2   | Ra = Rb + Rc                      |
+| ADDI | 001    | RRI-Type  | ADDI $r0, $zero, 27 | Ra = Rb + Imm                     |
+| NAND | 010    | RRR-Type  | NAND $r0, $r0, $r1  | Ra = ¬(Rb & Rc)                   |
+| LUI  | 011    | RI-Type   | LUI $r0, 0x1DE      | Bits 7-10 of Ra = Imm             |
+| SW   | 100    | RRI-Type  | SW $r0, $r1, 50     | Value of RAM at Rb + Imm = Ra     |
+| LW   | 101    | RRI-Type  | LW $r0, $r1, .loc   | Ra = value of RAM at Rb + Imm     |
+| BEQ  | 110    | RRR-Type  | BEQ $r0, $r1, $r2   | If Ra == Rb, branch to addr in Rc |
+| JAL  | 111    | RRI-Type* | JAL $r7, $r1        | Branch to addr in Rb, Ra = PC + 1 |
 
 *The immediate in the JAL instruction is left blank
 
@@ -37,11 +37,11 @@ The general formal for a line of assembly code is:
 
 These can be validated using some regular expressions for each of the instruction formats:
 ```
-RRR-Type: ^([a-zA-Z]+:)?([[:blank:]]*)(ADD|NAND)[[:blank:]]+(((\$(zero|r[0-6])),)(?2))(?4)(?6)(?2)(#(?2)[[:print:]]+)?$
+RRR-Type: ^([a-zA-Z]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(zero|r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$
 
-RRI-Type: ^([a-zA-Z]+:)?([[:blank:]]*)(ADDI|SW|LW|BEQ|JAL)[[:blank:]]+(((\$(zero|r[0-6])),)(?2))(?4)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))(?2)(#(?2)[[:print:]]+)?$
+RRI-Type: ^([a-zA-Z]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$
 
-RI-Type: ^([a-zA-Z]+:)?([[:blank:]]*)LUI(?2)(((\$(zero|r[0-6])),)(?2))(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))(?2)(#(?2)[[:print:]]+)?$
+RI-Type: ^([a-zA-Z]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$(zero|r[0-6])),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$
 ```
 
 Further constraints on the instructions are that the 7 bit immediates cannot be outside the range -64 to 63, and the 10 bit immediates cannot be outside the range 0 to 0x03FF or 0 to 1023.
@@ -103,7 +103,7 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
 
  - [x] Opening and reading input file to generate vector of lines
  - [ ] Validating lines vector
-   - [ ] Validating RRR-Type instructions
+   - [x] Validating RRR-Type instructions
    - [ ] Validating RRI-Type instructions
    - [ ] Validating RI-Type instructions
    - [ ] Validating instruction pseudo-instructions
