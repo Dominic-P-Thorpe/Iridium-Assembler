@@ -101,7 +101,7 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
 
 ## Current State of Development
 
- - [ ] Opening and reading input file to generate vector of lines
+ - [x] Opening and reading input file to generate vector of lines
  - [ ] Validating lines vector
    - [ ] Validating RRR-Type instructions
    - [ ] Validating RRI-Type instructions
