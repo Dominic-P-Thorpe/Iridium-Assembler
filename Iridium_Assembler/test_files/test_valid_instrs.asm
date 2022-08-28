@@ -1,3 +1,10 @@
+.fill 8
+.fill -10 # comment
+.fill 0x1E4
+binary: .fill 0b00110100111
+.fill 'a'
+.fill '~'
+
 ADD  $r0, $zero, $r1
 NAND $r5, $r4,   $r3
 branch: BEQ $r0, $r1, $r2

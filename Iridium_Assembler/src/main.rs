@@ -4,6 +4,7 @@ use std::fs::OpenOptions;
 use std::io::{ BufReader, BufRead };
 use lazy_static::lazy_static;
 use regex::Regex;
+use ascii_converter::string_to_decimals;
 
 
 #[derive(Debug)]
@@ -20,13 +21,30 @@ impl fmt::Display for AssemblyError {
 /// Takes an instruction and returns a result containing either any immediate it finds if successful, or an error if it could not find one.
 ///
 /// Panics if an immediate outside the valid range is found.
-fn get_imm_from_instr(instr:String, bits:u32, signed:bool) -> Result<i16, Box<dyn Error>> {
+fn get_imm_from_instr(instr:String, bits:u32, signed:bool, accept_char:bool) -> Result<i16, Box<dyn Error>> {
     lazy_static! {
-        static ref IMM_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
+        static ref INT_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
+        static ref CHAR_REGEX:Regex = Regex::new(r"'[[:ascii:]]'").unwrap();
     }
 
     let imm:i64;
-    let imm_str:&str = IMM_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>()[0].trim();
+    let imm_str:&str = match INT_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
+        Some(val) => val.trim(),
+        None => {
+            if !accept_char {
+                return Err(Box::new(AssemblyError(format!("Could not find a valid immediate in instruction {}", instr))))
+            }
+
+            match CHAR_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
+                Some(val) => {
+                    return Ok(*string_to_decimals(&val[1..2]).unwrap().get(0).unwrap() as i16)
+                },
+
+                None => return Err(Box::new(AssemblyError(format!("Could not find a valid immediate in instruction {}", instr))))
+            }
+        }
+    };
+
     if imm_str.contains("0x") {  // hexadecimal number
         imm = i64::from_str_radix(imm_str.trim_start_matches("0x"), 16).unwrap();
     } else if imm_str.contains("0b") { // binary number
@@ -62,15 +80,18 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
             static ref JAL_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
             static ref NOP_REGEX:Regex = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
             static ref DATA_REGEX:Regex = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref FILL_REGEX:Regex = Regex::new(r"^[[:blank:]]*([a-zA-Z]+:)?[[:blank:]]*.fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
         }
+
+        println!("line: {}", line);
 
         if RRR_REGEX.is_match(&line) {
             continue;
         } else if RRI_REGEX.is_match(&line) {
-            get_imm_from_instr(line, 7, true).unwrap();
+            get_imm_from_instr(line, 7, true, false).unwrap();
             continue;
         } else if RI_REGEX.is_match(&line) {
-            get_imm_from_instr(line, 10, false).unwrap();
+            get_imm_from_instr(line, 10, false, false).unwrap();
             continue;
         } else if JAL_REGEX.is_match(&line) {
             continue;
@@ -78,11 +99,14 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
             continue;
         } else if DATA_REGEX.is_match(&line) {
             if line.contains("LLI") {
-                get_imm_from_instr(line, 6, false).unwrap();
+                get_imm_from_instr(line, 6, false, false).unwrap();
             } else if line.contains("MOVI") {
-                get_imm_from_instr(line, 16, true).unwrap();
+                get_imm_from_instr(line, 16, true, false).unwrap();
             }
 
+            continue;
+        } else if FILL_REGEX.is_match(&line) {
+            get_imm_from_instr(line, 16, true, true).unwrap();
             continue;
         } else {
             return Err(Box::new(AssemblyError(format!("Line did not match any valid instructions patterns: {}", line))));
@@ -183,45 +207,48 @@ mod tests {
 
     #[test]
     fn test_get_imm_from_instr() {
-        let mut imm = get_imm_from_instr("ADDI $r0, $r1, 10".to_owned(), 7, true).unwrap();
+        let mut imm = get_imm_from_instr("ADDI $r0, $r1, 10".to_owned(), 7, true, true).unwrap();
         assert_eq!(imm, 10);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, -10".to_owned(), 7, true).unwrap();
+        imm = get_imm_from_instr("ADDI $r0, $r1, -10".to_owned(), 7, true, true).unwrap();
         assert_eq!(imm, -10);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, 0x03A".to_owned(), 7, true).unwrap();
+        imm = get_imm_from_instr("ADDI $r0, $r1, 0x03A".to_owned(), 7, true, true).unwrap();
         assert_eq!(imm, 0x3A);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, 0b011010".to_owned(), 7, true).unwrap();
+        imm = get_imm_from_instr("ADDI $r0, $r1, 0b011010".to_owned(), 7, true, true).unwrap();
         assert_eq!(imm, 0b11010);
+
+        imm = get_imm_from_instr(".fill 'a'".to_owned(), 16, true, true).unwrap();
+        assert_eq!(imm, 97);
     }
 
 
     #[test]
     #[should_panic]
     fn test_negative_unsigned_imm() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, -10".to_owned(), 7, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, -10".to_owned(), 7, false, false).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn unsigned_imm_out_of_range() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, 128".to_owned(), 7, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, 128".to_owned(), 7, false, false).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn signed_imm_to_large() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, 64".to_owned(), 7, true).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, 64".to_owned(), 7, true, false).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn signed_imm_to_small() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, -65".to_owned(), 7, true).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, -65".to_owned(), 7, true, false).unwrap();
     }
 
 
@@ -245,6 +272,22 @@ mod tests {
     #[should_panic]
     fn test_signed_imm_too_small_from_file() {
         let lines = get_line_vector("test_files/test_signed_imm_too_small.asm");
+        validate_assembly_lines(lines).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_non_ascii_char_fill() {
+        let lines = get_line_vector("test_files/test_non_ascii_fill.asm");
+        validate_assembly_lines(lines).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_fill_integer() {
+        let lines = get_line_vector("test_files/test_fill_invalid_int.asm");
         validate_assembly_lines(lines).unwrap();
     }
 }

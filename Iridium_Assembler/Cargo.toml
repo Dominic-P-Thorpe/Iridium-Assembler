@@ -9,3 +9,4 @@ edition = "2021"
 [dependencies]
 lazy_static = "1.4.0"
 regex = "1.6.0"
+ascii_converter = "0.3.0"
