@@ -60,6 +60,7 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
             static ref RRI_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
             static ref RI_REGEX:Regex  = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
             static ref JAL_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
+            static ref NOP_REGEX:Regex = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
         }
 
         if RRR_REGEX.is_match(&line) {
@@ -71,6 +72,8 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
             get_imm_from_instr(line, 10, false).unwrap();
             continue;
         } else if JAL_REGEX.is_match(&line) {
+            continue;
+        } else if NOP_REGEX.is_match(&line) {
             continue;
         } else {
             return Err(Box::new(AssemblyError(format!("Line did not match any valid instructions patterns: {}", line))));
@@ -120,11 +123,19 @@ mod tests {
     #[test]
     fn test_line_vector_generation() {
         let lines = get_line_vector("test_files/test_line_vec_gen.asm");
-        assert_eq!(lines[0], "ADDI $r0 $r0 5");
-        assert_eq!(lines[1], "ADDI $r0 $r1 2");
-        assert_eq!(lines[2], "NAND $r0 $r0 $r0");
-        assert_eq!(lines[3], "ADDI $r0 1");
-        assert_eq!(lines[4], "ADD $r0 $r0 $r1");
+        assert_eq!(lines[0], "ADDI $r0, $r0, 5");
+        assert_eq!(lines[1], "ADDI $r0, $r1, 2");
+        assert_eq!(lines[2], "NAND $r0, $r0, $r0");
+        assert_eq!(lines[3], "NOP");
+        assert_eq!(lines[4], "ADDI $r0, $r6, 1");
+        assert_eq!(lines[5], "ADD $r0, $r0, $r1");
+    }
+
+
+    #[test]
+    fn test_valid_file() {
+        let lines = get_line_vector("test_files/test_line_vec_gen.asm");
+        validate_assembly_lines(lines).unwrap();
     }
 
 

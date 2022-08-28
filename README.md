@@ -104,8 +104,8 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
  - [x] Opening and reading input file to generate vector of lines
  - [ ] Validating lines vector
    - [x] Validating RRR-Type instructions
-   - [ ] Validating RRI-Type instructions
-   - [ ] Validating RI-Type instructions
+   - [x] Validating RRI-Type instructions
+   - [x] Validating RI-Type instructions
    - [ ] Validating instruction pseudo-instructions
    - [ ] Validating data pseudo-instructions
    - [ ] Validating syscalls
