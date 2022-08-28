@@ -25,23 +25,23 @@ fn get_imm_from_instr(instr:String, bits:u32, signed:bool) -> Result<i16, Box<dy
         static ref IMM_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
     }
 
-    let imm:i16;
+    let imm:i64;
     let imm_str:&str = IMM_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>()[0].trim();
     if imm_str.contains("0x") {  // hexadecimal number
-        imm = i16::from_str_radix(imm_str.trim_start_matches("0x"), 16).unwrap();
+        imm = i64::from_str_radix(imm_str.trim_start_matches("0x"), 16).unwrap();
     } else if imm_str.contains("0b") { // binary number
-        imm = i16::from_str_radix(imm_str.trim_start_matches("0b"), 2).unwrap();
+        imm = i64::from_str_radix(imm_str.trim_start_matches("0b"), 2).unwrap();
     } else {
         imm = imm_str.parse().unwrap();
     }
 
-    if !signed && (imm < 0 || imm > 2_i16.pow(bits) - 1) {
+    if !signed && (imm < 0 || imm > 2_i64.pow(bits) - 1) {
         return Err(Box::new(AssemblyError(format!("Found negative immediate {} in unsigned immediate field in instruction {}", imm, instr))));
-    } else if signed && (imm < -(2_i16.pow(bits) / 2) || imm > (2_i16.pow(bits) / 2) - 1) {
+    } else if signed && (imm < -(2_i64.pow(bits) / 2) || imm > (2_i64.pow(bits) / 2) - 1) {
         return Err(Box::new(AssemblyError(format!("Found immediate {} outside valid range in instruction {}", imm, instr))));
     }
 
-    return Ok(imm)
+    return Ok(imm as i16)
 }
 
 
@@ -61,6 +61,7 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
             static ref RI_REGEX:Regex  = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
             static ref JAL_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
             static ref NOP_REGEX:Regex = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref DATA_REGEX:Regex = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
         }
 
         if RRR_REGEX.is_match(&line) {
@@ -74,6 +75,14 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
         } else if JAL_REGEX.is_match(&line) {
             continue;
         } else if NOP_REGEX.is_match(&line) {
+            continue;
+        } else if DATA_REGEX.is_match(&line) {
+            if line.contains("LLI") {
+                get_imm_from_instr(line, 6, false).unwrap();
+            } else if line.contains("MOVI") {
+                get_imm_from_instr(line, 16, true).unwrap();
+            }
+
             continue;
         } else {
             return Err(Box::new(AssemblyError(format!("Line did not match any valid instructions patterns: {}", line))));

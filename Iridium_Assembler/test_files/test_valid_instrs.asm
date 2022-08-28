@@ -13,3 +13,6 @@ end: ADD $r1, $r2, $r3 # end of program
 
 NOP
 label: NOP # test NOP instr
+
+LLI $r0, 20
+MOVI $r1, 0x10e

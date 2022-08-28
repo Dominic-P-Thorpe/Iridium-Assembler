@@ -67,14 +67,14 @@ Syscalls are made by writing the instruction `syscall [code]` in the same way as
 The program may also contain the following directives for the assembler:
  - **NOP**: the processor does nothing this cycle, and is replaced by the instruction `ADD $zero $zero $zero` which clearly does nothing but takes 1 cycle to do.
  - **LLI**: formatted as `LLI $Ra Imm` ORs the 6-bit immediate operand into the register $Ra and is replaced by `ADD $rX, imm6` upon compilation. This is useful when used in combination with LUI to load a full 16 bit value into a register.
- - **MOVI**: formatted as `MOVI $rX, Imm`, MOVI is shorthand for LUI + LLI and takes a 16-bit operand and puts it into the specified register. This instruction assembles to 2 instructions, and can therefore confuse jumping to numerical addresses, to labels should be used if at all possible.
+ - **MOVI**: formatted as `MOVI $Ra, Imm`, MOVI is shorthand for LUI + LLI and takes a 16-bit operand and puts it into the specified register. This instruction assembles to 2 instructions, and can therefore confuse jumping to numerical addresses, to labels should be used if at all possible.
  - **.fill**: formatted as `.fill Imm` tells the assembler to place a 16-bit immediate value here instead of an instruction. If it is used with a label address instead of an immediate, such as `.fill end`, then the address of the label will be inserted. It can also take a character in the form `'char'`, such as `'a'` and converts it to its ASCII representation.
  - **.space**: formatted as `.space Imm [Values]`, it is replaced by a number of `.fill` instructions equal to the immediate operand which fills the locations with the value in Values at that index, and 0x0000 if index > len(values).
  - **.text**: formatted as `.text "some string"`, it does the same as `.space` except converts each character in the string to its ASCII representation and uses those as the values to insert plus a null terminator **\0** to insert into a .space the same length as the string + 1.
 
 These are each validated differently:
--  `NOP` is simply required to match the regex `^([[:blank:]]*)([a-zA-Z]+:)?(?1)NOP(?1)(#[[:print:]]*)?$`.
--  `LLI` should match the regex `^([[:blank:]]*)([a-zA-Z]+:)?(?1)LLI(?1)(\$r[0-6]),(?1)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))(?1)(#[[:print:]]*)?$` and have an immediate between 0 and 63.
+-  `NOP` is simply required to match the regex `^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$`.
+-  `LLI` should match the regex `^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)LLI([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$` and have an immediate between 0 and 63.
 -  `MOVI` should match the regex `^([[:blank:]]*)([a-zA-Z]+:)?(?1)(MOVI)(?1)(\$r[0-6]),(?1)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))(?1)(#[[:print:]]*)?$` and have an immediate between -32,768 and 32,767.
 -  `.fill` should match the regex `^([[:blank:]]*)([a-zA-Z]+:)?(?1).fill(?1)((0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))|'[[:ascii:]]')(?1)(#[[:print:]]*)?$` and have any non-character immediate be between -32,768 and 32,767.
 -  `.space` should match the regex `^([[:blank:]]*)([a-zA-Z]+:)(?1).space(?1)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))(?1)\[(('[[:ascii:]]'|(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))),(?1))*\](?1)(#[[:print:]]*)?$` and have any non-character immediate be between -32,768 and 32,767 and have the size of the space be >= the size of the array.
