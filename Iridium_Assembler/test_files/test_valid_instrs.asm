@@ -5,6 +5,8 @@ binary: .fill 0b00110100111
 .fill 'a'
 .fill '~'
 
+array: .space 20 [100, 'a', 'b', 0xFF, 0b11101] # an array
+
 ADD  $r0, $zero, $r1
 NAND $r5, $r4,   $r3
 branch: BEQ $r0, $r1, $r2

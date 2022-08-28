@@ -63,6 +63,46 @@ fn get_imm_from_instr(instr:String, bits:u32, signed:bool, accept_char:bool) -> 
 }
 
 
+/// Validating .space will not work with the get_imm_from_instr() function due to Rust RegEx not implementing lookarounds. Therefore, this function validates them instead.
+///
+/// Panics if the input is not a valid statement.
+fn validate_space(instr:&str) -> Result<(), Box<dyn Error>> {
+    lazy_static! {
+        static ref ELEM_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+|'[[:ascii:]]')").unwrap();
+    }
+
+    let elems:Vec<&str> = ELEM_REGEX.find_iter(instr).map(|item| item.as_str()).collect();
+    let array_len:i64 = elems.get(0).unwrap().parse().expect(&format!("Could not get length of array in instruction {}", instr));
+    if elems.len() > array_len as usize {
+        return Err(Box::new(AssemblyError(format!("Array is not long enough for data in instruction {}", instr))));
+    }
+
+    for elem in elems {
+        let val = match elem.parse::<i64>() {
+            Ok(val) => val,
+            Err(_) => {
+                let val:i64;
+                if elem.contains("0x") {  // hexadecimal number
+                    val = i64::from_str_radix(elem.trim_start_matches("0x"), 16).unwrap();
+                } else if elem.contains("0b") { // binary number
+                    val = i64::from_str_radix(elem.trim_start_matches("0b"), 2).unwrap();
+                } else { // elem is a character
+                    continue;
+                }
+
+                val
+            }
+        };
+
+        if val > 65535 {
+            return Err(Box::new(AssemblyError(format!("Value {} is out of the range 0 <= value < 65536 in instruction {}", val, instr).to_owned())));
+        }
+    }
+
+    Ok(())
+}
+
+
 /// Go line-by-line through each instruction in the file, skips if it is empty, and otherwise compares against a set of regular expressions to determine the type of
 /// the instruction or pseudo-instruction, then performs other checks such as validating the range of immediate values.
 ///
@@ -74,16 +114,16 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
         }
 
         lazy_static! {
-            static ref RRR_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
-            static ref RRI_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
-            static ref RI_REGEX:Regex  = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
-            static ref JAL_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
-            static ref NOP_REGEX:Regex = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref DATA_REGEX:Regex = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref FILL_REGEX:Regex = Regex::new(r"^[[:blank:]]*([a-zA-Z]+:)?[[:blank:]]*.fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref UINT_REGEX:Regex  = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|([0-9]+)").unwrap();
+            static ref RRR_REGEX:Regex   = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
+            static ref RRI_REGEX:Regex   = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+            static ref RI_REGEX:Regex    = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+            static ref JAL_REGEX:Regex   = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
+            static ref NOP_REGEX:Regex   = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref DATA_REGEX:Regex  = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref FILL_REGEX:Regex  = Regex::new(r"^[[:blank:]]*([a-zA-Z]+:)?[[:blank:]]*.fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref SPACE_REGEX:Regex = Regex::new(r"^([[:print:]]+:)?[[:blank:]]+.space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
         }
-
-        println!("line: {}", line);
 
         if RRR_REGEX.is_match(&line) {
             continue;
@@ -107,6 +147,9 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
             continue;
         } else if FILL_REGEX.is_match(&line) {
             get_imm_from_instr(line, 16, true, true).unwrap();
+            continue;
+        } else if SPACE_REGEX.is_match(&line) {
+            validate_space(&line).unwrap();
             continue;
         } else {
             return Err(Box::new(AssemblyError(format!("Line did not match any valid instructions patterns: {}", line))));
@@ -289,5 +332,18 @@ mod tests {
     fn test_invalid_fill_integer() {
         let lines = get_line_vector("test_files/test_fill_invalid_int.asm");
         validate_assembly_lines(lines).unwrap();
+    }
+
+
+    #[test]
+    fn test_validate_space() {
+        validate_space(".space 10 [100, 200, 0xFF, 0b001100, 'a', 'b']").unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_validate_invalid_space() {
+        validate_space(".space 10 [100, 200, 0xFFFFF, 0b001100, 'a', 'b']").unwrap();
     }
 }
