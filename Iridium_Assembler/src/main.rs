@@ -93,7 +93,8 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
 }
 
 
-/// Iterates through each line in the given file and returns a vector containing all the lines.
+/// Iterates through each line in the given file and returns a vector containing all the lines, then removes any '#' symbols and everythig after them, and finally
+/// trims the resulting string.
 /// 
 /// Panics if a line cannot be read or the file cannot be found.
 fn get_line_vector(filename: &str) -> Vec<String> {
@@ -104,7 +105,10 @@ fn get_line_vector(filename: &str) -> Vec<String> {
         let mut result:Vec<String> = Vec::new();
 
         for line in reader.lines() {
-            result.push(line.expect(&format!("ERROR: Could not read line {}", line_num)).trim().to_owned());
+            let mut ln = line.expect(&format!("ERROR: Could not read line {}", line_num)).trim().to_owned();
+            ln = ln[..ln.find('#').unwrap_or(ln.len())].trim().to_owned(); // strip comments out of all lines
+
+            result.push(ln);
             line_num += 1;
         }
 
