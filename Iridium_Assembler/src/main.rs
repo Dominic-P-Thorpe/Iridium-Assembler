@@ -12,8 +12,36 @@ struct AssemblyError(String);
 impl Error for AssemblyError {}
 impl fmt::Display for AssemblyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "AssmblyError: {}", self.0)
+        writeln!(f, "AssemblyError: {}", self.0)
     }
+}
+
+
+/// Takes an instruction and returns a result containing either any immediate it finds if successful, or an error if it could not find one.
+///
+/// Panics if an immediate outside the valid range is found.
+fn get_imm_from_instr(instr:String, bits:u32, signed:bool) -> Result<i16, Box<dyn Error>> {
+    lazy_static! {
+        static ref IMM_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
+    }
+
+    let imm:i16;
+    let imm_str:&str = IMM_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>()[0].trim();
+    if imm_str.contains("0x") {  // hexadecimal number
+        imm = i16::from_str_radix(imm_str.trim_start_matches("0x"), 16).unwrap();
+    } else if imm_str.contains("0b") { // binary number
+        imm = i16::from_str_radix(imm_str.trim_start_matches("0b"), 2).unwrap();
+    } else {
+        imm = imm_str.parse().unwrap();
+    }
+
+    if !signed && (imm < 0 || imm > 2_i16.pow(bits) - 1) {
+        return Err(Box::new(AssemblyError(format!("Found negative immediate {} in unsigned immediate field in instruction {}", imm, instr))));
+    } else if signed && (imm < -(2_i16.pow(bits) / 2) || imm > (2_i16.pow(bits) / 2) - 1) {
+        return Err(Box::new(AssemblyError(format!("Found immediate {} outside valid range in instruction {}", imm, instr))));
+    }
+
+    return Ok(imm)
 }
 
 
@@ -30,17 +58,17 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
         lazy_static! {
             static ref RRR_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
             static ref RRI_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
-            static ref RI_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+            static ref RI_REGEX:Regex  = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
             static ref JAL_REGEX:Regex = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
         }
 
         if RRR_REGEX.is_match(&line) {
             continue;
         } else if RRI_REGEX.is_match(&line) {
-            // Add validation for the signed immediate
+            get_imm_from_instr(line, 7, true).unwrap();
             continue;
         } else if RI_REGEX.is_match(&line) {
-            // Add validation for the unsigned immediate
+            get_imm_from_instr(line, 10, false).unwrap();
             continue;
         } else if JAL_REGEX.is_match(&line) {
             continue;
@@ -126,6 +154,73 @@ mod tests {
     #[should_panic]
     fn test_write_to_zero_reg() {
         let lines = get_line_vector("test_files/test_invalid_RRR.asm");
+        validate_assembly_lines(lines).unwrap();
+    }
+
+    #[test]
+    fn test_get_imm_from_instr() {
+        let mut imm = get_imm_from_instr("ADDI $r0, $r1, 10".to_owned(), 7, true).unwrap();
+        assert_eq!(imm, 10);
+
+        imm = get_imm_from_instr("ADDI $r0, $r1, -10".to_owned(), 7, true).unwrap();
+        assert_eq!(imm, -10);
+
+        imm = get_imm_from_instr("ADDI $r0, $r1, 0x03A".to_owned(), 7, true).unwrap();
+        assert_eq!(imm, 0x3A);
+
+        imm = get_imm_from_instr("ADDI $r0, $r1, 0b011010".to_owned(), 7, true).unwrap();
+        assert_eq!(imm, 0b11010);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_negative_unsigned_imm() {
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, -10".to_owned(), 7, false).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn unsigned_imm_out_of_range() {
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, 128".to_owned(), 7, false).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn signed_imm_to_large() {
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, 64".to_owned(), 7, true).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn signed_imm_to_small() {
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, -65".to_owned(), 7, true).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_unsigned_imm_too_large_from_file() {
+        let lines = get_line_vector("test_files/test_unsigned_imm_too_small.asm");
+        validate_assembly_lines(lines).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_signed_imm_too_large_from_file() {
+        let lines = get_line_vector("test_files/test_signed_imm_too_large.asm");
+        validate_assembly_lines(lines).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_signed_imm_too_small_from_file() {
+        let lines = get_line_vector("test_files/test_signed_imm_too_small.asm");
         validate_assembly_lines(lines).unwrap();
     }
 }
