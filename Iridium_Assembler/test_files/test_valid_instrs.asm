@@ -5,6 +5,8 @@ binary: .fill 0b00110100111
 .fill 'a'
 .fill '~'
 
+text: .text "hello world!" # some text
+
 array: .space 20 [100, 'a', 'b', 0xFF, 0b11101] # an array
 
 ADD  $r0, $zero, $r1
@@ -21,7 +23,7 @@ LUI $r4, 0x1de
 end: ADD $r1, $r2, $r3 # end of program
 
 NOP
-label: NOP # test NOP instr
+    label: NOP # test NOP instr
 
-LLI $r0, 20
-MOVI $r1, 0x10e
+    LLI $r0, 20     
+    MOVI $r1, 0x10e
