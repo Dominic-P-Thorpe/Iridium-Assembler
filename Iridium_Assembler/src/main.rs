@@ -24,6 +24,7 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
     lazy_static! {
         static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
         static ref REGISTER_REGEX:Regex = Regex::new(r"\$r([0-6]|zero)").unwrap();
+        static ref ELEM_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+|'[[:ascii:]]')").unwrap();
     }
 
     let mut new_vec = lines.clone();
@@ -55,12 +56,64 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
             new_vec.insert(index + 1, format!("LUI {}, {}", register, upper_imm));
 
             index += 1;
+        } else if instr.contains(".space") {
+            new_vec.remove(index);
+            
+            let defined_elems:Vec<u16> = ELEM_REGEX.find_iter(&instr).map(|item| convert_to_i64(item.as_str()).unwrap() as u16).collect::<Vec<u16>>()[1..].to_vec();
+            let total_elems = ELEM_REGEX.find_iter(&instr).map(|item| convert_to_i64(item.as_str()).unwrap() as u16).collect::<Vec<u16>>()[0];
+
+            for elem_index in 0..total_elems {
+                let mut value_to_insert = format!("0x{:04X}", 0);
+                if elem_index < defined_elems.len() as u16 {
+                    value_to_insert = format!("0x{:04X}", defined_elems[elem_index as usize]);
+                }
+
+                if elem_index == 0 {
+                    value_to_insert = label.to_owned() + &value_to_insert;
+                }
+
+                new_vec.insert(index + elem_index as usize, value_to_insert);
+            }
+
+            index += total_elems as usize - 1;
+        } else if instr.contains(".text") {
+
         }
 
         index += 1;
     }
 
     new_vec
+}
+
+
+/// Takes a string formatted either as a decimal (signed or unsigned), binary (prefixed with "0b"), or hexadecimal (prefixed with "0x"), and outputs it as an `i64`. It
+/// may also take a character as an input which conforms to the RegEx r"^'[[:ascii:]]'$" and will output the ASCII value of that character.
+///
+/// Returns an error if the value passed is not a decimal, hexadecimal, or binary integer or not a single character in single quotes.
+fn convert_to_i64(raw_string:&str) -> Result<i64, Box<dyn Error>> {
+    let imm:i64;
+    if raw_string.contains("0x") {  // hexadecimal number
+        imm = match i64::from_str_radix(raw_string.trim_start_matches("0x"), 16) {
+            Ok(val) => val,
+            Err(_) => { return Err(Box::new(AssemblyError(format!("Could not convert from {} to i64", raw_string)))) }
+        };
+    } else if raw_string.contains("0b") { // binary number
+        imm = match i64::from_str_radix(raw_string.trim_start_matches("0b"), 2) {
+            Ok(val) => val,
+            Err(_) => { return Err(Box::new(AssemblyError(format!("Could not convert from {} to i64", raw_string)))) }
+        };
+    } else {
+        imm = match raw_string.parse() {
+            Ok(val) => val,
+            Err(_) => match string_to_decimals(&raw_string[1..2]) {
+                Ok(val) => *val.get(0).unwrap() as i64,
+                Err(_) => { return Err(Box::new(AssemblyError(format!("Could not convert from {} to i64", raw_string)))) }
+            }
+        };
+    }
+
+    Ok(imm)
 }
 
 
@@ -73,7 +126,6 @@ fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Re
         static ref CHAR_REGEX:Regex = Regex::new(r"'[[:ascii:]]'").unwrap();
     }
 
-    let imm:i64;
     let imm_str:&str = match INT_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
         Some(val) => val.trim(),
         None => {
@@ -88,13 +140,7 @@ fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Re
         }
     };
 
-    if imm_str.contains("0x") {  // hexadecimal number
-        imm = i64::from_str_radix(imm_str.trim_start_matches("0x"), 16).unwrap();
-    } else if imm_str.contains("0b") { // binary number
-        imm = i64::from_str_radix(imm_str.trim_start_matches("0b"), 2).unwrap();
-    } else {
-        imm = imm_str.parse().unwrap();
-    }
+    let imm:i64 = convert_to_i64(imm_str).unwrap();
 
     if !signed && (imm < 0 || imm > 2_i64.pow(bits) - 1) {
         return Err(Box::new(AssemblyError(format!("Found negative immediate {} in unsigned immediate field in instruction {}", imm, instr))));
@@ -164,10 +210,10 @@ fn validate_assembly_lines(lines:&Vec<String>) -> Result<(), Box<dyn Error>> {
             static ref JAL_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
             static ref NOP_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
             static ref DATA_REGEX:Regex  = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref FILL_REGEX:Regex  = Regex::new(r"^([a-zA-Z_]+:)?[[:blank:]]*.fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref SPACE_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?[[:blank:]]+.space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
-            static ref TEXT_REGEX:Regex  = Regex::new(r#"^([a-zA-Z_]+:)?[[:blank:]]+.text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
-            static ref SCALL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:[[:blank:]]+)?.syscall [0-7]$").unwrap();
+            static ref FILL_REGEX:Regex  = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref SPACE_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*((\+|-)?[0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
+            static ref TEXT_REGEX:Regex  = Regex::new(r#"^([a-zA-Z_]+:)?([[:blank:]]*).text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
+            static ref SCALL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).syscall [0-7]$").unwrap();
         }
 
         if RRR_REGEX.is_match(&line) {
@@ -450,6 +496,47 @@ mod tests {
     fn test_invalid_lli() {
         let lines = vec!["LLI $r0, 86".to_owned()];
         validate_assembly_lines(&lines).unwrap();
+    }
+
+
+    #[test]
+    fn test_convert_to_i64() {
+        assert_eq!(convert_to_i64("100").unwrap(), 100);
+        assert_eq!(convert_to_i64("-100").unwrap(), -100);
+        assert_eq!(convert_to_i64("0x0F4").unwrap(), 244);
+        assert_eq!(convert_to_i64("0b0110").unwrap(), 6);
+        assert_eq!(convert_to_i64("'c'").unwrap(), 99);
+        assert_eq!(convert_to_i64("'&''").unwrap(), 38);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_convert_to_i64_non_ascii_char() {
+        assert_eq!(convert_to_i64("'Ж'").unwrap(), 100);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_convert_to_i64_malformed_char() {
+        assert_eq!(convert_to_i64("a'").unwrap(), 100);
+    }
+
+
+    #[test]
+    fn test_space_sub() {
+        let mut lines = get_line_vector("test_files/test_space_sub.asm");
+        validate_assembly_lines(&lines).unwrap();
+        lines = substitute_pseudoinstrs(&lines);
+
+        assert_eq!(lines[0], "ADD $r0, $r1, $r2");
+        assert_eq!(lines[1], "start: 0x0064");
+        assert_eq!(lines[2], "0xFFFE");
+        assert_eq!(lines[3], "0x0061");
+        assert_eq!(lines[4], "0x0000");
+        assert_eq!(lines[5], "0x0000");
+        assert_eq!(lines[6], "ADD $r0, $r1, $r3");
     }
 }
 

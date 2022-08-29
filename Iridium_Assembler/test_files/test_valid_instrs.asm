@@ -7,7 +7,7 @@ binary: .fill 0b00110100111
 
 text: .text "hello world!" # some text
 
-array: .space 20 [100, 'a', 'b', 0xFF, 0b11101] # an array
+array: .space 20 [100, -100, 'a', 'b', 0xFF, 0b11101] # an array
 
 ADD  $r0, $zero, $r1
 NAND $r5, $r4,   $r3
