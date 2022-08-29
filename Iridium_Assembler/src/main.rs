@@ -123,7 +123,8 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
             static ref DATA_REGEX:Regex  = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
             static ref FILL_REGEX:Regex  = Regex::new(r"^[[:blank:]]*([a-zA-Z]+:)?[[:blank:]]*.fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
             static ref SPACE_REGEX:Regex = Regex::new(r"^([[:print:]]+:)?[[:blank:]]+.space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
-            static ref TEXT_REGEX:Regex = Regex::new(r#"^([[:print:]]+:)?[[:blank:]]+.text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
+            static ref TEXT_REGEX:Regex  = Regex::new(r#"^([[:print:]]+:)?[[:blank:]]+.text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
+            static ref SCALL_REGEX:Regex = Regex::new(r"^([[:print:]]+:[[:blank:]]+)?.syscall [0-7]$").unwrap();
         }
 
         if RRR_REGEX.is_match(&line) {
@@ -153,6 +154,8 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
             validate_space(&line).unwrap();
             continue;
         } else if TEXT_REGEX.is_match(&line) {
+            continue;
+        } else if SCALL_REGEX.is_match(&line) {
             continue;
         } else {
             return Err(Box::new(AssemblyError(format!("Line did not match any valid instructions patterns: {}", line))));
@@ -355,5 +358,13 @@ mod tests {
     #[should_panic]
     fn test_array_too_small() {
         validate_space(".space 3 [100, 200, 50, 20]").unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_syscall_code() {
+        let lines = get_line_vector("test_files\test_invalid_syscall_code.asm");
+        validate_assembly_lines(lines).unwrap();
     }
 }

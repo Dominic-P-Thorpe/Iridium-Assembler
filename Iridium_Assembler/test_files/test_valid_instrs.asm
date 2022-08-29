@@ -22,6 +22,8 @@ LUI $r4, 0x1de
 
 end: ADD $r1, $r2, $r3 # end of program
 
+    .syscall 7
+
 NOP
     label: NOP # test NOP instr
 

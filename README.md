@@ -27,7 +27,7 @@ The instruction set is laid out in the table below:
 | BEQ  | 110    | RRR-Type  | BEQ $r0, $r1, $r2   | If Ra == Rb, branch to addr in Rc |
 | JAL  | 111    | RRI-Type* | JAL $r7, $r1        | Branch to addr in Rb, Ra = PC + 1 |
 
-*The immediate in the JAL instruction is left blank
+*The immediate in the JAL instruction is 0 under normal circumstances, or 0x007F if a syscall (see [Syscalls & Interrupts](#syscalls--interrupts)).
 
 ### Formatting and Validating Instructions
 
@@ -49,17 +49,20 @@ Further constraints on the instructions are that the 7 bit immediates cannot be 
 We also must take the format of the immediates into account as they may be in decimal form with no prefix, in binary form with the 0b prefix, or in hex form with the 0x prefix, and ensure that these are also in the range.
 
 
-### Syscalls
+### Syscalls & Interrupts
 
-Syscalls are made by writing the instruction `syscall [code]` in the same way as a normal instruction. This will be substituted by the assembler with a `JAL` command to a location in the OS section of RAM to invoke the relevant subroutine. The value stored in **$r6** will by taken as an argument for this if one is required. The available syscall instructions are as follows:
- - **print_char**: outputs the value in **$r6** as a character
- - **print_str**: outputs characters in RAM starting at the address in **$r6** and stopping when it reaches **\0**
- - **print_int**: outputs the value in **$r6** as a decimal integer
- - **print_hex**: outputs the value in **$r6** as a hexadecimal integer
- - **input_int**: awaits input from the user in decimal format and stores it in **$r6**
- - **input_char**: awaits input from the user as a character and stores it in **$r6**
- - **halt**: terminates program execution and freezes
- - **error**: terminates program and freezes, outputting **ERROR**
+Syscalls are made by writing the instruction `.syscall [code]` in the same way as a normal instruction. This will be substituted by the assembler with a `JAL` command to a location in the OS section of RAM to invoke the relevant subroutine called the Interrupt Handler. The value stored in **$r6** will by taken as an argument for this if one is required, and will be where the result is returned. When an interrupt is detected, registers *\$r0* to *\$r5* will be pushed to the stack and restored afterwards. The available syscall instructions are as follows:
+
+| Code | Name           | Description                                                           |
+|------|----------------|-----------------------------------------------------------------------|
+| 0    | Print char     | Outputs the value in **$r6** as a character                           |
+| 1    | Print string   | Outputs the string starting at the address stored in **$r6**          |
+| 2    | Print decimal  | Outputs the value in **$r6** as a decimal integer                     |
+| 3    | Print hex      | Outputs the value in **$r6** as a hex integer                         |
+| 4    | Input int      | Awaits input from the user in decimal format and stores it in **$r6** |
+| 5    | Input char     | Awaits input from the user as a character and stores it in **$r6**    |
+| 6    | Halt           | Stops execution and freezes                                           |
+| 7    | Error          | Stops execution, outputs **ERROR**, and freezes                       |
 
 
 ## Pseudo-Instructions
@@ -106,8 +109,8 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
    - [x] Validating RRR-Type instructions
    - [x] Validating RRI-Type instructions
    - [x] Validating RI-Type instructions
-   - [ ] Validating instruction pseudo-instructions
-   - [ ] Validating data pseudo-instructions
+   - [x] Validating instruction pseudo-instructions
+   - [x] Validating data pseudo-instructions
    - [ ] Validating syscalls
  - [ ] Pseudo-Instruction substitution
    - [ ] Find pseudo-instructions in the vector
