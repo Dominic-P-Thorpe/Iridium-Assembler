@@ -44,6 +44,17 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
 
             new_vec.remove(index);
             new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, imm));
+        } else if instr.contains("MOVI") {
+            let register = REGISTER_REGEX.find(&instr).unwrap().as_str();
+            let imm:u16 = get_imm_from_instr(&instr, 16, false, false).unwrap() as u16;
+            let lower_imm = imm & 0x003F;
+            let upper_imm = imm & 0xFFC0;
+
+            new_vec.remove(index);
+            new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, lower_imm));
+            new_vec.insert(index + 1, format!("LUI {}, {}", register, upper_imm));
+
+            index += 1;
         }
 
         index += 1;
@@ -71,11 +82,8 @@ fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Re
             }
 
             match CHAR_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
-                Some(val) => {
-                    return Ok(*string_to_decimals(&val[1..2]).unwrap().get(0).unwrap() as i16)
-                },
-
-                None => return Err(Box::new(AssemblyError(format!("Could not find a valid immediate in instruction {}", instr))))
+                Some(val) => return Ok(*string_to_decimals(&val[1..2]).unwrap().get(0).unwrap() as i16),
+                None      => return Err(Box::new(AssemblyError(format!("Could not find a valid immediate in instruction {}", instr))))
             }
         }
     };
@@ -178,7 +186,7 @@ fn validate_assembly_lines(lines:&Vec<String>) -> Result<(), Box<dyn Error>> {
             if line.contains("LLI") {
                 get_imm_from_instr(line, 6, false, false).unwrap();
             } else if line.contains("MOVI") {
-                get_imm_from_instr(line, 16, true, false).unwrap();
+                get_imm_from_instr(line, 16, false, false).unwrap();
             }
 
             continue;
@@ -237,7 +245,7 @@ fn main() {
 
     let mut index = 0;
     for line in lines {
-        println!("{:04x}: {}", index, line);
+        println!("{:04X}: {}", index, line);
         index += 1;
     }
 }
@@ -431,7 +439,9 @@ mod tests {
         assert_eq!(lines[3], "ADDI $r2, $zero, 20");
         assert_eq!(lines[4], "labelA: ADDI $r2, $r2, 50");
         assert_eq!(lines[5], "labelB: ADD $zero, $zero, $zero");
-        assert_eq!(lines.len(), 6);
+        assert_eq!(lines[6], "labelC: ADDI $r1, $r1, 48");
+        assert_eq!(lines[7], "LUI $r1, 63488");
+        assert_eq!(lines.len(), 8);
     }
 
 

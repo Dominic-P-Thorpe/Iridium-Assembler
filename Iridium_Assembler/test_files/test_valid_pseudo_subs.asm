@@ -4,3 +4,4 @@ NOP
 ADDI $r2, $zero, 20
 labelA: LLI $r2, 50 # comment
 labelB: NOP
+labelC: MOVI $r1, 0xF830
