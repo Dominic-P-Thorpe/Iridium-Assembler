@@ -13,7 +13,7 @@ ADD  $r0, $zero, $r1
 NAND $r5, $r4,   $r3
 branch: BEQ $r0, $r1, $r2
 
-loop: ADDI $r0, $r1, 20 # <--- test label.
+loop_start: ADDI $r0, $r1, 20 # <--- test label.
 SW $r0, $r5, 0b001101
 LW $r0, $r5, 0x0F
 jump: JAL $r6, $r5 

@@ -27,7 +27,7 @@ The instruction set is laid out in the table below:
 | BEQ  | 110    | RRR-Type  | BEQ $r0, $r1, $r2   | If Ra == Rb, branch to addr in Rc |
 | JAL  | 111    | RRI-Type* | JAL $r7, $r1        | Branch to addr in Rb, Ra = PC + 1 |
 
-*The immediate in the JAL instruction is 0 under normal circumstances, or 0x007F if a syscall (see [Syscalls & Interrupts](#syscalls--interrupts)).
+*The immediate in the JAL instruction is 0x007F under normal circumstances, or the syscall code if a syscall (see [Syscalls & Interrupts](#syscalls--interrupts)).
 
 ### Formatting and Validating Instructions
 
@@ -105,13 +105,13 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
 ## Current State of Development
 
  - [x] Opening and reading input file to generate vector of lines
- - [ ] Validating lines vector
+ - [x] Validating lines vector
    - [x] Validating RRR-Type instructions
    - [x] Validating RRI-Type instructions
    - [x] Validating RI-Type instructions
    - [x] Validating instruction pseudo-instructions
    - [x] Validating data pseudo-instructions
-   - [ ] Validating syscalls
+   - [x] Validating syscalls
  - [ ] Pseudo-Instruction substitution
    - [ ] Find pseudo-instructions in the vector
    - [ ] Determine correct substitution(s) to make

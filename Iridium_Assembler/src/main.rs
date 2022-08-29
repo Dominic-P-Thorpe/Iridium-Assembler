@@ -18,10 +18,45 @@ impl fmt::Display for AssemblyError {
 }
 
 
+/// Takes a vector of instructions and examines it for any pseudo-instructions. If it finds any, then it replaces it with 1-or-more regular instructions which are inserted
+/// into the vector in its place. The vector at the end of this process is returned.
+fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
+    lazy_static! {
+        static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
+        static ref REGISTER_REGEX:Regex = Regex::new(r"\$r([0-6]|zero)").unwrap();
+    }
+
+    let mut new_vec = lines.clone();
+    let mut index:usize = 0;
+    while index < new_vec.len() {
+        let instr = new_vec[index].to_owned();
+        let label = match LABEL_REGEX.find(&instr) {
+            Some(val) => val.as_str().to_owned() + " ",
+            None => "".to_owned()
+        };
+
+        if instr.contains("NOP") {
+            new_vec.remove(index);
+            new_vec.insert(index, format!("{}ADD $zero, $zero, $zero", label));
+        } else if instr.contains("LLI") {
+            let imm = get_imm_from_instr(&instr, 6, false, false).unwrap();
+            let register = REGISTER_REGEX.find(&instr).unwrap().as_str();
+
+            new_vec.remove(index);
+            new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, imm));
+        }
+
+        index += 1;
+    }
+
+    new_vec
+}
+
+
 /// Takes an instruction and returns a result containing either any immediate it finds if successful, or an error if it could not find one.
 ///
 /// Panics if an immediate outside the valid range is found.
-fn get_imm_from_instr(instr:String, bits:u32, signed:bool, accept_char:bool) -> Result<i16, Box<dyn Error>> {
+fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Result<i16, Box<dyn Error>> {
     lazy_static! {
         static ref INT_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
         static ref CHAR_REGEX:Regex = Regex::new(r"'[[:ascii:]]'").unwrap();
@@ -107,7 +142,7 @@ fn validate_space(instr:&str) -> Result<(), Box<dyn Error>> {
 /// the instruction or pseudo-instruction, then performs other checks such as validating the range of immediate values.
 ///
 /// Panics if an invalid instruction is found, otherwise returns `Ok()`
-fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
+fn validate_assembly_lines(lines:&Vec<String>) -> Result<(), Box<dyn Error>> {
     for line in lines {
         if line.is_empty() {
             continue;
@@ -115,16 +150,16 @@ fn validate_assembly_lines(lines:Vec<String>) -> Result<(), Box<dyn Error>> {
 
         lazy_static! {
             static ref UINT_REGEX:Regex  = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|([0-9]+)").unwrap();
-            static ref RRR_REGEX:Regex   = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
-            static ref RRI_REGEX:Regex   = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
-            static ref RI_REGEX:Regex    = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
-            static ref JAL_REGEX:Regex   = Regex::new(r"^([a-zA-Z]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
-            static ref NOP_REGEX:Regex   = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref DATA_REGEX:Regex  = Regex::new(r"^([[:blank:]]*)([a-zA-Z]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref FILL_REGEX:Regex  = Regex::new(r"^[[:blank:]]*([a-zA-Z]+:)?[[:blank:]]*.fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref SPACE_REGEX:Regex = Regex::new(r"^([[:print:]]+:)?[[:blank:]]+.space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
-            static ref TEXT_REGEX:Regex  = Regex::new(r#"^([[:print:]]+:)?[[:blank:]]+.text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
-            static ref SCALL_REGEX:Regex = Regex::new(r"^([[:print:]]+:[[:blank:]]+)?.syscall [0-7]$").unwrap();
+            static ref RRR_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
+            static ref RRI_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+            static ref RI_REGEX:Regex    = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+            static ref JAL_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
+            static ref NOP_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref DATA_REGEX:Regex  = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref FILL_REGEX:Regex  = Regex::new(r"^([a-zA-Z_]+:)?[[:blank:]]*.fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+            static ref SPACE_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?[[:blank:]]+.space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
+            static ref TEXT_REGEX:Regex  = Regex::new(r#"^([a-zA-Z_]+:)?[[:blank:]]+.text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
+            static ref SCALL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:[[:blank:]]+)?.syscall [0-7]$").unwrap();
         }
 
         if RRR_REGEX.is_match(&line) {
@@ -196,8 +231,15 @@ fn main() {
     let args:Vec<String> = env::args().collect();
     println!("Assembling {} --> {}", args[1], args[2]);
 
-    let lines:Vec<String> = get_line_vector(&args[1]);
-    validate_assembly_lines(lines).unwrap();
+    let mut lines:Vec<String> = get_line_vector(&args[1]);
+    validate_assembly_lines(&lines).unwrap();
+    lines = substitute_pseudoinstrs(&lines);
+
+    let mut index = 0;
+    for line in lines {
+        println!("{:04x}: {}", index, line);
+        index += 1;
+    }
 }
 
 
@@ -221,7 +263,7 @@ mod tests {
     #[test]
     fn test_valid_file() {
         let lines = get_line_vector("test_files/test_line_vec_gen.asm");
-        validate_assembly_lines(lines).unwrap();
+        validate_assembly_lines(&lines).unwrap();
     }
 
 
@@ -235,40 +277,40 @@ mod tests {
     #[test]
     fn test_valid_instrs() {
         let lines = get_line_vector("test_files/test_valid_instrs.asm");
-        validate_assembly_lines(lines).unwrap();
+        validate_assembly_lines(&lines).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn test_invalid_rrr() {
-        let lines = get_line_vector("test_files/test_invalid_RRR.asm");
-        validate_assembly_lines(lines).unwrap();
+        let lines = vec!["ADD $zero $r1 $r1".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn test_write_to_zero_reg() {
-        let lines = get_line_vector("test_files/test_invalid_RRR.asm");
-        validate_assembly_lines(lines).unwrap();
+        let lines = vec!["ADD $zero, $r1, $r1".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
     }
 
     #[test]
     fn test_get_imm_from_instr() {
-        let mut imm = get_imm_from_instr("ADDI $r0, $r1, 10".to_owned(), 7, true, true).unwrap();
+        let mut imm = get_imm_from_instr("ADDI $r0, $r1, 10", 7, true, true).unwrap();
         assert_eq!(imm, 10);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, -10".to_owned(), 7, true, true).unwrap();
+        imm = get_imm_from_instr("ADDI $r0, $r1, -10", 7, true, true).unwrap();
         assert_eq!(imm, -10);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, 0x03A".to_owned(), 7, true, true).unwrap();
+        imm = get_imm_from_instr("ADDI $r0, $r1, 0x03A", 7, true, true).unwrap();
         assert_eq!(imm, 0x3A);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, 0b011010".to_owned(), 7, true, true).unwrap();
+        imm = get_imm_from_instr("ADDI $r0, $r1, 0b011010", 7, true, true).unwrap();
         assert_eq!(imm, 0b11010);
 
-        imm = get_imm_from_instr(".fill 'a'".to_owned(), 16, true, true).unwrap();
+        imm = get_imm_from_instr(".fill 'a'", 16, true, true).unwrap();
         assert_eq!(imm, 97);
     }
 
@@ -276,68 +318,60 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_negative_unsigned_imm() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, -10".to_owned(), 7, false, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, -10", 7, false, false).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn unsigned_imm_out_of_range() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, 128".to_owned(), 7, false, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, 128", 7, false, false).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn signed_imm_to_large() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, 64".to_owned(), 7, true, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, 64", 7, true, false).unwrap();
     }
 
 
     #[test]
     #[should_panic]
-    fn signed_imm_to_small() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, -65".to_owned(), 7, true, false).unwrap();
+    fn signed_imm_too_small() {
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, -65", 7, true, false).unwrap();
     }
 
 
     #[test]
     #[should_panic]
-    fn test_unsigned_imm_too_large_from_file() {
-        let lines = get_line_vector("test_files/test_unsigned_imm_too_small.asm");
-        validate_assembly_lines(lines).unwrap();
+    fn test_unsigned_imm_too_large() {
+        let lines = vec!["ADDI $r0, $r1, 100000".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
     }
 
 
     #[test]
     #[should_panic]
-    fn test_signed_imm_too_large_from_file() {
-        let lines = get_line_vector("test_files/test_signed_imm_too_large.asm");
-        validate_assembly_lines(lines).unwrap();
-    }
-
-
-    #[test]
-    #[should_panic]
-    fn test_signed_imm_too_small_from_file() {
-        let lines = get_line_vector("test_files/test_signed_imm_too_small.asm");
-        validate_assembly_lines(lines).unwrap();
+    fn test_signed_imm_too_large() {
+        let lines = vec!["ADDI $r0, $r1, 100".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn test_non_ascii_char_fill() {
-        let lines = get_line_vector("test_files/test_non_ascii_fill.asm");
-        validate_assembly_lines(lines).unwrap();
+        let lines = vec![".fill 'д'".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn test_invalid_fill_integer() {
-        let lines = get_line_vector("test_files/test_fill_invalid_int.asm");
-        validate_assembly_lines(lines).unwrap();
+        let lines = vec![".fill -100000".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
     }
 
 
@@ -364,7 +398,48 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_invalid_syscall_code() {
-        let lines = get_line_vector("test_files\test_invalid_syscall_code.asm");
-        validate_assembly_lines(lines).unwrap();
+        let lines = vec![".syscall 18".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_label_with_space() {
+        let lines = vec!["hello world: ADD $r0, $r1, $r2".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_label_with_non_alphabet_char() {
+        let lines = vec!["he**world: ADD $r0, $r1, $r2".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
+    }
+
+
+    #[test]
+    fn test_valid_pseudoinstr_substitutions() {
+        let mut lines = get_line_vector("test_files/test_valid_pseudo_subs.asm");
+        validate_assembly_lines(&lines).unwrap();
+        lines = substitute_pseudoinstrs(&lines);
+
+        assert_eq!(lines[0], "ADDI $r0, $zero, 20");
+        assert_eq!(lines[1], "ADDI $r1, $r1, 20");
+        assert_eq!(lines[2], "ADD $zero, $zero, $zero");
+        assert_eq!(lines[3], "ADDI $r2, $zero, 20");
+        assert_eq!(lines[4], "labelA: ADDI $r2, $r2, 50");
+        assert_eq!(lines[5], "labelB: ADD $zero, $zero, $zero");
+        assert_eq!(lines.len(), 6);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_lli() {
+        let lines = vec!["LLI $r0, 86".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
     }
 }
+
