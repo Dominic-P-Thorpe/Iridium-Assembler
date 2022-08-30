@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn test_text_sub() {
-        let mut lines = vec!["tag: .text \"Hell@ w0rld!\"".to_owned()];
+        let mut lines = vec!["tag: .text \"Hell@ \"w0rld!\"".to_owned()];
         validate_assembly_lines(&lines).unwrap();
         lines = substitute_pseudoinstrs(&lines);
 
@@ -597,9 +597,10 @@ mod tests {
         assert_eq!(lines[2], ".fill 0x006C");
         assert_eq!(lines[4], ".fill 0x0040");
         assert_eq!(lines[5], ".fill 0x0020");
-        assert_eq!(lines[11], ".fill 0x0021");
-        assert_eq!(lines[12], ".fill 0x0000");
-        assert_eq!(lines.len(), 13);
+        assert_eq!(lines[6], ".fill 0x0022");
+        assert_eq!(lines[12], ".fill 0x0021");
+        assert_eq!(lines[13], ".fill 0x0000");
+        assert_eq!(lines.len(), 14);
     }
 
 
@@ -629,6 +630,5 @@ mod tests {
         lines = substitute_pseudoinstrs(&lines);
         generate_label_table(&lines).unwrap();
     }
-
 }
 

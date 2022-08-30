@@ -84,6 +84,34 @@ These are each validated differently:
 -  `.text` should match the regex `^([[:blank:]]*)([a-zA-Z]+:)(?1).text(?1)(?1)"([[:ascii:]]+)"(?1)(#[[:print:]]*)?$`
 
 
+## Labels
+
+Labels are notes in the assembly code at the start of an instruction which mark locations which can be referenced elsewhere in other instructions using the '@' prefix. These are useful as they allow the programmer to reference locations in memory without knowing where they are beforehand as many factors can cause this to happen. It is encouraged for programmers to use labels and not absolute addresses wherever possible. 
+
+Usually, labels are used with the MOVI pseudoinstruction in place of the immediate operand (the absolute value is substituted in during assembly), then, that register can be used as the argument to a LW or JAL instruction to load data or branch execution. When used with an RRI instruction, the bottom 6 bits of the address the label refers to are inserted into the immediate field; when used with the LUI or other RI instruction, the top 10 bits are loaded into the immediate field.
+
+The code below demonstrates loading the value from a `.fill` instruction using a label into *$r0* and then printing is as a hex number:
+```
+my_data: .fill 0x0ABC
+MOVI $r0, @my_data
+syscall 3
+```
+
+The code below demonstrates how labels can be used in a simple loop to count to 20.
+```
+ADDI $r0, $zero, 0 # current count
+ADDI $r1, $zero, 20 # maximum
+
+loop: ADDI $r0, $r0, 1
+      MOVI $r6, @end
+      BEQ $r0, $r1, $r6
+      MOVI $r6, @loop
+      JAL $zero, $r6
+
+end: syscall 6
+```
+
+
 ## Process of Assembly
 
 The assembly code will be processed in 3 passes of the input file:
