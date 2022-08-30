@@ -116,9 +116,9 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
    - [x] Find pseudo-instructions in the vector
    - [x] Determine correct substitution(s) to make
    - [x] Make substitutions
- - [ ] Label table generation
-   - [ ] Find all labels
-   - [ ] Generate table of names and locations of labels
+ - [x] Label table generation
+   - [x] Find all labels
+   - [x] Generate table of names and locations of labels
  - [ ] Label substitution
    - [ ] Find all references to labels in the vector
    - [ ] Make substitution if the address will fit in the space allowed for the immediate

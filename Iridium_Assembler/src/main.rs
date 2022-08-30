@@ -1,4 +1,5 @@
 use std::{ env, fmt };
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::{ BufReader, BufRead };
@@ -15,6 +16,38 @@ impl fmt::Display for AssemblyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "AssemblyError: {}", self.0)
     }
+}
+
+
+/// Goes through every line of the program looking for instructions with a label matching the regex `^[a-zA-Z_]+:`. This is then added to a `HashMap` with the label's
+/// name as the key and its line number as the value - this hashmap is the return value.
+fn generate_label_table(lines:&Vec<String>) -> Result<HashMap<String, i32>, Box<dyn Error>> {
+    lazy_static! {
+        static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
+    }
+
+    let mut label_table:HashMap<String, i32> = HashMap::new();
+    let mut line_num = 0;
+    for line in lines {
+        println!("{:04X}: {}", line_num, line);
+
+        match LABEL_REGEX.find(line) {
+            Some(val) => { 
+                let label_name = val.as_str().replace(":", "");
+                if label_table.keys().collect::<Vec<&String>>().contains(&&label_name) {
+                    return Err(Box::new(AssemblyError(format!("Found duplicate key {}", label_name))));
+                }
+
+                label_table.insert(label_name, line_num);
+            },
+
+            None => (),
+        };
+        
+        line_num += 1;
+    }
+
+    Ok(label_table)
 }
 
 
@@ -307,9 +340,18 @@ fn main() {
     lines = substitute_pseudoinstrs(&lines);
     lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
 
+    let label_table = generate_label_table(&lines).unwrap();
+
     let mut index = 0;
     for line in lines {
         println!("{:04X}: {}", index, line);
+        index += 1;
+    }
+
+    println!("\n\n");
+
+    for line in label_table {
+        println!("{}: {}", line.0, line.1);
         index += 1;
     }
 }
@@ -572,5 +614,34 @@ mod tests {
         assert_eq!(lines[12], ".fill 0x0000");
         assert_eq!(lines.len(), 13);
     }
+
+
+    #[test]
+    fn test_label_table_generation() {
+        let mut lines = get_line_vector("test_files/test_label_table_generation.asm");
+        validate_assembly_lines(&lines).unwrap();
+        lines = substitute_pseudoinstrs(&lines);
+        lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
+        
+        let tags = generate_label_table(&lines).unwrap();
+        assert_eq!(tags["start"], 0);
+        assert_eq!(tags["something"], 3);
+        assert_eq!(tags["number"], 4);
+        assert_eq!(tags["hello"], 5);
+        assert_eq!(tags["more_text"], 11);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_duplicate_label() {
+        let mut lines = get_line_vector("test_files/test_duplicate_label.asm");
+        validate_assembly_lines(&lines).unwrap();
+        lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
+
+        lines = substitute_pseudoinstrs(&lines);
+        generate_label_table(&lines).unwrap();
+    }
+
 }
 
