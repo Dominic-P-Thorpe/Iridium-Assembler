@@ -112,10 +112,10 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
    - [x] Validating instruction pseudo-instructions
    - [x] Validating data pseudo-instructions
    - [x] Validating syscalls
- - [ ] Pseudo-Instruction substitution
-   - [ ] Find pseudo-instructions in the vector
-   - [ ] Determine correct substitution(s) to make
-   - [ ] Make substitutions
+ - [x] Pseudo-Instruction substitution
+   - [x] Find pseudo-instructions in the vector
+   - [x] Determine correct substitution(s) to make
+   - [x] Make substitutions
  - [ ] Label table generation
    - [ ] Find all labels
    - [ ] Generate table of names and locations of labels

@@ -25,6 +25,7 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
         static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
         static ref REGISTER_REGEX:Regex = Regex::new(r"\$r([0-6]|zero)").unwrap();
         static ref ELEM_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+|'[[:ascii:]]')").unwrap();
+        static ref TEXT_REGEX:Regex = Regex::new(r#""[[:ascii:]]+""#).unwrap();
     }
 
     let mut new_vec = lines.clone();
@@ -77,7 +78,23 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
 
             index += total_elems as usize - 1;
         } else if instr.contains(".text") {
+            new_vec.remove(index);
 
+            let text = TEXT_REGEX.find(&instr).unwrap().as_str();
+            let cleaned_text = text[1..text.len() - 1].to_owned();
+            let text_ascii = string_to_decimals(&cleaned_text).unwrap().into_iter().map(|item| format!(".fill 0x{:04X}", item)).collect::<Vec<String>>();
+
+            let mut elem_index = 0;
+            for mut char_str in text_ascii {
+                if elem_index == 0 {
+                    char_str = label.to_owned() + &char_str;
+                }
+
+                new_vec.insert(elem_index + index as usize, char_str);
+                elem_index += 1;
+            }
+
+            new_vec.insert(elem_index + index as usize, ".fill 0x0000".to_owned());
         }
 
         index += 1;
@@ -162,7 +179,7 @@ fn validate_space(instr:&str) -> Result<(), Box<dyn Error>> {
 
     let elems:Vec<&str> = ELEM_REGEX.find_iter(instr).map(|item| item.as_str()).collect();
     let array_len:i64 = elems.get(0).unwrap().parse().expect(&format!("Could not get length of array in instruction {}", instr));
-    if elems.len() > array_len as usize {
+    if elems.len() > (array_len + 1) as usize {
         return Err(Box::new(AssemblyError(format!("Array is not long enough for data in instruction {}", instr))));
     }
 
@@ -288,6 +305,7 @@ fn main() {
     let mut lines:Vec<String> = get_line_vector(&args[1]);
     validate_assembly_lines(&lines).unwrap();
     lines = substitute_pseudoinstrs(&lines);
+    lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
 
     let mut index = 0;
     for line in lines {
@@ -537,6 +555,22 @@ mod tests {
         assert_eq!(lines[4], "0x0000");
         assert_eq!(lines[5], "0x0000");
         assert_eq!(lines[6], "ADD $r0, $r1, $r3");
+    }
+
+
+    #[test]
+    fn text_text_sub() {
+        let mut lines = vec!["tag: .text \"Hell@ w0rld!\"".to_owned()];
+        validate_assembly_lines(&lines).unwrap();
+        lines = substitute_pseudoinstrs(&lines);
+
+        assert_eq!(lines[0], "tag: .fill 0x0048");
+        assert_eq!(lines[2], ".fill 0x006C");
+        assert_eq!(lines[4], ".fill 0x0040");
+        assert_eq!(lines[5], ".fill 0x0020");
+        assert_eq!(lines[11], ".fill 0x0021");
+        assert_eq!(lines[12], ".fill 0x0000");
+        assert_eq!(lines.len(), 13);
     }
 }
 
