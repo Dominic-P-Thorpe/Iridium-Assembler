@@ -8,6 +8,27 @@ use regex::Regex;
 use ascii_converter::string_to_decimals;
 
 
+lazy_static! {
+    static ref RI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+    static ref RRR_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
+    static ref RRI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+    static ref JAL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
+    static ref NOP_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+    static ref INT_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
+    static ref ELEM_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+|'[[:ascii:]]')").unwrap();
+    static ref CHAR_REGEX:Regex = Regex::new(r"'[[:ascii:]]'").unwrap();
+    static ref UINT_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|([0-9]+)").unwrap();
+    static ref DATA_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+    static ref FILL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+    static ref SPACE_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*((\+|-)?[0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
+    static ref SCALL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).syscall [0-7]$").unwrap();
+    static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
+    static ref REGISTER_REGEX:Regex = Regex::new(r"\$r([0-6]|zero)").unwrap();
+    static ref TEXT_IMM_REGEX:Regex = Regex::new(r#""[[:ascii:]]+""#).unwrap();
+    static ref PSEUDO_TEXT_REGEX:Regex = Regex::new(r#"^([a-zA-Z_]+:)?([[:blank:]]*).text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
+}
+
+
 #[derive(Debug)]
 struct AssemblyError(String);
 
@@ -22,10 +43,6 @@ impl fmt::Display for AssemblyError {
 /// Goes through every line of the program looking for instructions with a label matching the regex `^[a-zA-Z_]+:`. This is then added to a `HashMap` with the label's
 /// name as the key and its line number as the value - this hashmap is the return value.
 fn generate_label_table(lines:&Vec<String>) -> Result<HashMap<String, i32>, Box<dyn Error>> {
-    lazy_static! {
-        static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
-    }
-
     let mut label_table:HashMap<String, i32> = HashMap::new();
     let mut line_num = 0;
     for line in lines {
@@ -54,13 +71,6 @@ fn generate_label_table(lines:&Vec<String>) -> Result<HashMap<String, i32>, Box<
 /// Takes a vector of instructions and examines it for any pseudo-instructions. If it finds any, then it replaces it with 1-or-more regular instructions which are inserted
 /// into the vector in its place. The vector at the end of this process is returned.
 fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
-    lazy_static! {
-        static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
-        static ref REGISTER_REGEX:Regex = Regex::new(r"\$r([0-6]|zero)").unwrap();
-        static ref ELEM_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+|'[[:ascii:]]')").unwrap();
-        static ref TEXT_REGEX:Regex = Regex::new(r#""[[:ascii:]]+""#).unwrap();
-    }
-
     let mut new_vec = lines.clone();
     let mut index:usize = 0;
     while index < new_vec.len() {
@@ -113,7 +123,7 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
         } else if instr.contains(".text") {
             new_vec.remove(index);
 
-            let text = TEXT_REGEX.find(&instr).unwrap().as_str();
+            let text = TEXT_IMM_REGEX.find(&instr).unwrap().as_str();
             let cleaned_text = text[1..text.len() - 1].to_owned();
             let text_ascii = string_to_decimals(&cleaned_text).unwrap().into_iter().map(|item| format!(".fill 0x{:04X}", item)).collect::<Vec<String>>();
 
@@ -171,11 +181,6 @@ fn convert_to_i64(raw_string:&str) -> Result<i64, Box<dyn Error>> {
 ///
 /// Panics if an immediate outside the valid range is found.
 fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Result<i16, Box<dyn Error>> {
-    lazy_static! {
-        static ref INT_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
-        static ref CHAR_REGEX:Regex = Regex::new(r"'[[:ascii:]]'").unwrap();
-    }
-
     let imm_str:&str = match INT_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
         Some(val) => val.trim(),
         None => {
@@ -206,10 +211,6 @@ fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Re
 ///
 /// Panics if the input is not a valid statement.
 fn validate_space(instr:&str) -> Result<(), Box<dyn Error>> {
-    lazy_static! {
-        static ref ELEM_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+|'[[:ascii:]]')").unwrap();
-    }
-
     let elems:Vec<&str> = ELEM_REGEX.find_iter(instr).map(|item| item.as_str()).collect();
     let array_len:i64 = elems.get(0).unwrap().parse().expect(&format!("Could not get length of array in instruction {}", instr));
     if elems.len() > (array_len + 1) as usize {
@@ -252,20 +253,6 @@ fn validate_assembly_lines(lines:&Vec<String>) -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        lazy_static! {
-            static ref UINT_REGEX:Regex  = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|([0-9]+)").unwrap();
-            static ref RRR_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
-            static ref RRI_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
-            static ref RI_REGEX:Regex    = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
-            static ref JAL_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
-            static ref NOP_REGEX:Regex   = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref DATA_REGEX:Regex  = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref FILL_REGEX:Regex  = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
-            static ref SPACE_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*((\+|-)?[0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
-            static ref TEXT_REGEX:Regex  = Regex::new(r#"^([a-zA-Z_]+:)?([[:blank:]]*).text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
-            static ref SCALL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).syscall [0-7]$").unwrap();
-        }
-
         if RRR_REGEX.is_match(&line) {
             continue;
         } else if RRI_REGEX.is_match(&line) {
@@ -292,7 +279,7 @@ fn validate_assembly_lines(lines:&Vec<String>) -> Result<(), Box<dyn Error>> {
         } else if SPACE_REGEX.is_match(&line) {
             validate_space(&line).unwrap();
             continue;
-        } else if TEXT_REGEX.is_match(&line) {
+        } else if PSEUDO_TEXT_REGEX.is_match(&line) {
             continue;
         } else if SCALL_REGEX.is_match(&line) {
             continue;
@@ -601,7 +588,7 @@ mod tests {
 
 
     #[test]
-    fn text_text_sub() {
+    fn test_text_sub() {
         let mut lines = vec!["tag: .text \"Hell@ w0rld!\"".to_owned()];
         validate_assembly_lines(&lines).unwrap();
         lines = substitute_pseudoinstrs(&lines);
