@@ -88,7 +88,7 @@ These are each validated differently:
 
 Labels are notes in the assembly code at the start of an instruction which mark locations which can be referenced elsewhere in other instructions using the '@' prefix. These are useful as they allow the programmer to reference locations in memory without knowing where they are beforehand as many factors can cause this to happen. It is encouraged for programmers to use labels and not absolute addresses wherever possible. 
 
-Usually, labels are used with the MOVI pseudoinstruction in place of the immediate operand (the absolute value is substituted in during assembly), then, that register can be used as the argument to a LW or JAL instruction to load data or branch execution. When used with an RRI instruction, the bottom 6 bits of the address the label refers to are inserted into the immediate field; when used with the LUI or other RI instruction, the top 10 bits are loaded into the immediate field.
+Usually, labels are used with the MOVI pseudoinstruction in place of the immediate operand (the absolute value is substituted in during assembly), then, that register can be used as the argument to a LW or JAL instruction to load data or branch execution. When used with an RRI instruction or the LLI pseudo-instruction, the bottom 6 bits of the address the label refers to are inserted into the immediate field; when used with the LUI or other RI instruction, the top 10 bits are loaded into the immediate field.
 
 The code below demonstrates loading the value from a `.fill` instruction using a label into *$r0* and then printing is as a hex number:
 ```
@@ -117,9 +117,9 @@ end: syscall 6
 The assembly code will be processed in 3 passes of the input file:
  1. **Read Phase**: The file is scanned and turned into a vector of lines.
  2. **Validation Phase**: The vector has each line validated and the programmer is informed if any invalid code is detected.
- 3. **Pseudo Phase**: Any pseudo-instructions and syscalls are found and the appropriate substitutions are made.
- 4. **Label Table Phase**: Any labels are found and inserted into a table of the name of the label and the location in memory it refers to.
- 5. **Label Substitution Phase** Labels are changed to their proper values using the table from the previous phase.
+ 3. **Label Table Phase**: Any labels are found and inserted into a table of the name of the label and the location in memory it refers to.
+ 4. **Label Substitution Phase** Labels are changed to their proper values using the table from the previous phase.
+ 5. **Pseudo Phase**: Any pseudo-instructions and syscalls are found and the appropriate substitutions are made.
  6. **Binary Generation Phase** The final vector of lines in converted into binary and written to the output file. 
 
 
@@ -150,6 +150,6 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
  - [ ] Label substitution
    - [ ] Find all references to labels in the vector
    - [ ] Make substitution if the address will fit in the space allowed for the immediate
-   - [ ] Add instructions to push *\$r6* to the stack, move address into *\$r6*, use address, and restore *\$r6*
+   - [ ] Make substitution for pseudo-instructions
  - [ ] Convert instructions to binary
  - [ ] Write final binary to file 

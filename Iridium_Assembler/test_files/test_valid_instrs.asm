@@ -29,3 +29,7 @@ NOP
 
     LLI $r0, 20     
     MOVI $r1, 0x10e
+    MOVI $r2, @jump
+    LLI $r3, @loop_start
+    ADDI $r4, $r4, @array
+    LUI $r5, @end

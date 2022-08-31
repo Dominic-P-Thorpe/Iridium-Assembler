@@ -9,22 +9,23 @@ use ascii_converter::string_to_decimals;
 
 
 lazy_static! {
-    static ref RI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+    static ref RI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+|@[a-zA-Z_]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
     static ref RRR_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
-    static ref RRI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+    static ref RRI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)|@[a-zA-Z_]+)[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
     static ref JAL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
     static ref NOP_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
     static ref INT_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
     static ref ELEM_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+|'[[:ascii:]]')").unwrap();
     static ref CHAR_REGEX:Regex = Regex::new(r"'[[:ascii:]]'").unwrap();
     static ref UINT_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|([0-9]+)").unwrap();
-    static ref DATA_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+    static ref DATA_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+|@[a-zA-Z_]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
     static ref FILL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
     static ref SPACE_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*((\+|-)?[0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
     static ref SCALL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).syscall [0-7]$").unwrap();
     static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
     static ref REGISTER_REGEX:Regex = Regex::new(r"\$r([0-6]|zero)").unwrap();
     static ref TEXT_IMM_REGEX:Regex = Regex::new(r#""[[:ascii:]]+""#).unwrap();
+    static ref LABEL_ARG_REGEX:Regex = Regex::new(r"@[a-zA-Z_]+").unwrap();
     static ref PSEUDO_TEXT_REGEX:Regex = Regex::new(r#"^([a-zA-Z_]+:)?([[:blank:]]*).text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
 }
 
@@ -84,14 +85,14 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
             new_vec.remove(index);
             new_vec.insert(index, format!("{}ADD $zero, $zero, $zero", label));
         } else if instr.contains("LLI") {
-            let imm = get_imm_from_instr(&instr, 6, false, false).unwrap();
+            let imm = get_imm_from_instr(&instr, 6, false, false, true).unwrap().unwrap();
             let register = REGISTER_REGEX.find(&instr).unwrap().as_str();
 
             new_vec.remove(index);
             new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, imm));
         } else if instr.contains("MOVI") {
             let register = REGISTER_REGEX.find(&instr).unwrap().as_str();
-            let imm:u16 = get_imm_from_instr(&instr, 16, false, false).unwrap() as u16;
+            let imm:u16 = get_imm_from_instr(&instr, 16, false, false, true).unwrap().unwrap() as u16;
             let lower_imm = imm & 0x003F;
             let upper_imm = imm & 0xFFC0;
 
@@ -177,10 +178,23 @@ fn convert_to_i64(raw_string:&str) -> Result<i64, Box<dyn Error>> {
 }
 
 
-/// Takes an instruction and returns a result containing either any immediate it finds if successful, or an error if it could not find one.
+/// Takes an instruction and returns a result containing either any immediate it finds if successful, or an error if it could not find one. If it finds a label immediate,
+/// then it will return `None`.
 ///
 /// Panics if an immediate outside the valid range is found.
-fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Result<i16, Box<dyn Error>> {
+fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool, accept_label:bool) -> Result<Option<i16>, Box<dyn Error>> {
+    match LABEL_ARG_REGEX.find(&instr) {
+        Some(val) => {
+            if accept_label {
+                return Ok(None);
+            }
+
+            return Err(Box::new(AssemblyError(format!("Found label {} in instruction {} but labels are not accepted", val.as_str(), instr))));
+        },
+
+        None => {}
+    };
+
     let imm_str:&str = match INT_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
         Some(val) => val.trim(),
         None => {
@@ -189,7 +203,7 @@ fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Re
             }
 
             match CHAR_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
-                Some(val) => return Ok(*string_to_decimals(&val[1..2]).unwrap().get(0).unwrap() as i16),
+                Some(val) => return Ok(Some(*string_to_decimals(&val[1..2]).unwrap().get(0).unwrap() as i16)),
                 None      => return Err(Box::new(AssemblyError(format!("Could not find a valid immediate in instruction {}", instr))))
             }
         }
@@ -203,7 +217,7 @@ fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool) -> Re
         return Err(Box::new(AssemblyError(format!("Found immediate {} outside valid range in instruction {}", imm, instr))));
     }
 
-    return Ok(imm as i16)
+    return Ok(Some(imm as i16))
 }
 
 
@@ -256,10 +270,10 @@ fn validate_assembly_lines(lines:&Vec<String>) -> Result<(), Box<dyn Error>> {
         if RRR_REGEX.is_match(&line) {
             continue;
         } else if RRI_REGEX.is_match(&line) {
-            get_imm_from_instr(line, 7, true, false).unwrap();
+            get_imm_from_instr(line, 7, true, false, true).unwrap();
             continue;
         } else if RI_REGEX.is_match(&line) {
-            get_imm_from_instr(line, 10, false, false).unwrap();
+            get_imm_from_instr(line, 10, false, false, true).unwrap();
             continue;
         } else if JAL_REGEX.is_match(&line) {
             continue;
@@ -267,14 +281,14 @@ fn validate_assembly_lines(lines:&Vec<String>) -> Result<(), Box<dyn Error>> {
             continue;
         } else if DATA_REGEX.is_match(&line) {
             if line.contains("LLI") {
-                get_imm_from_instr(line, 6, false, false).unwrap();
+                get_imm_from_instr(line, 6, false, false, true).unwrap();
             } else if line.contains("MOVI") {
-                get_imm_from_instr(line, 16, false, false).unwrap();
+                get_imm_from_instr(line, 16, false, false, true).unwrap();
             }
 
             continue;
         } else if FILL_REGEX.is_match(&line) {
-            get_imm_from_instr(line, 16, true, true).unwrap();
+            get_imm_from_instr(line, 16, true, true, false).unwrap();
             continue;
         } else if SPACE_REGEX.is_match(&line) {
             validate_space(&line).unwrap();
@@ -324,10 +338,10 @@ fn main() {
 
     let mut lines:Vec<String> = get_line_vector(&args[1]);
     validate_assembly_lines(&lines).unwrap();
-    lines = substitute_pseudoinstrs(&lines);
-    lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
-
     let label_table = generate_label_table(&lines).unwrap();
+
+    lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
+    lines = substitute_pseudoinstrs(&lines);
 
     let mut index = 0;
     for line in lines {
@@ -352,19 +366,14 @@ mod tests {
     #[test]
     fn test_line_vector_generation() {
         let lines = get_line_vector("test_files/test_line_vec_gen.asm");
-        assert_eq!(lines[0], "ADDI $r0, $r0, 5");
+        assert_eq!(lines[0], "start: ADDI $r0, $r0, 5");
         assert_eq!(lines[1], "ADDI $r0, $r1, 2");
         assert_eq!(lines[2], "NAND $r0, $r0, $r0");
         assert_eq!(lines[3], "NOP");
         assert_eq!(lines[4], "ADDI $r0, $r6, 1");
         assert_eq!(lines[5], "ADD $r0, $r0, $r1");
-    }
-
-
-    #[test]
-    fn test_valid_file() {
-        let lines = get_line_vector("test_files/test_line_vec_gen.asm");
-        validate_assembly_lines(&lines).unwrap();
+        assert_eq!(lines[6], "MOVI $r0, @start");
+        assert_eq!(lines.len(), 7);
     }
 
 
@@ -397,50 +406,62 @@ mod tests {
         validate_assembly_lines(&lines).unwrap();
     }
 
+
     #[test]
     fn test_get_imm_from_instr() {
-        let mut imm = get_imm_from_instr("ADDI $r0, $r1, 10", 7, true, true).unwrap();
-        assert_eq!(imm, 10);
+        let mut imm = get_imm_from_instr("ADDI $r0, $r1, 10", 7, true, true, true).unwrap();
+        assert_eq!(imm.unwrap(), 10);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, -10", 7, true, true).unwrap();
-        assert_eq!(imm, -10);
+        imm = get_imm_from_instr("ADDI $r0, $r1, -10", 7, true, true, true).unwrap();
+        assert_eq!(imm.unwrap(), -10);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, 0x03A", 7, true, true).unwrap();
-        assert_eq!(imm, 0x3A);
+        imm = get_imm_from_instr("ADDI $r0, $r1, 0x03A", 7, true, true, true).unwrap();
+        assert_eq!(imm.unwrap(), 0x3A);
 
-        imm = get_imm_from_instr("ADDI $r0, $r1, 0b011010", 7, true, true).unwrap();
-        assert_eq!(imm, 0b11010);
+        imm = get_imm_from_instr("ADDI $r0, $r1, 0b011010", 7, true, true, true).unwrap();
+        assert_eq!(imm.unwrap(), 0b11010);
 
-        imm = get_imm_from_instr(".fill 'a'", 16, true, true).unwrap();
-        assert_eq!(imm, 97);
+        imm = get_imm_from_instr(".fill 'a'", 16, true, true, false).unwrap();
+        assert_eq!(imm.unwrap(), 97);
+
+        imm = get_imm_from_instr("ADDI $r0, $r1, @label", 16, true, true, true).unwrap();
+        assert_eq!(imm, None);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_label_imm() {
+        let imm = get_imm_from_instr("ADDI $r0, $r1, @label", 16, true, true, false).unwrap();
+        assert_eq!(imm, None);
     }
 
 
     #[test]
     #[should_panic]
     fn test_negative_unsigned_imm() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, -10", 7, false, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, -10", 7, false, false, true).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn unsigned_imm_out_of_range() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, 128", 7, false, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, 128", 7, false, false, true).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn signed_imm_to_large() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, 64", 7, true, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, 64", 7, true, false, true).unwrap();
     }
 
 
     #[test]
     #[should_panic]
     fn signed_imm_too_small() {
-        let _imm = get_imm_from_instr("ADDI $r0, $r1, -65", 7, true, false).unwrap();
+        let _imm = get_imm_from_instr("ADDI $r0, $r1, -65", 7, true, false, true).unwrap();
     }
 
 
@@ -608,6 +629,7 @@ mod tests {
     fn test_label_table_generation() {
         let mut lines = get_line_vector("test_files/test_label_table_generation.asm");
         validate_assembly_lines(&lines).unwrap();
+        
         lines = substitute_pseudoinstrs(&lines);
         lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
         
@@ -625,9 +647,10 @@ mod tests {
     fn test_duplicate_label() {
         let mut lines = get_line_vector("test_files/test_duplicate_label.asm");
         validate_assembly_lines(&lines).unwrap();
-        lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
 
         lines = substitute_pseudoinstrs(&lines);
+        lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
+
         generate_label_table(&lines).unwrap();
     }
 }
