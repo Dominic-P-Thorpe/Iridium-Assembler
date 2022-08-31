@@ -147,9 +147,9 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
  - [x] Label table generation
    - [x] Find all labels
    - [x] Generate table of names and locations of labels
- - [ ] Label substitution
-   - [ ] Find all references to labels in the vector
-   - [ ] Make substitution if the address will fit in the space allowed for the immediate
-   - [ ] Make substitution for pseudo-instructions
+ - [x] Label substitution
+   - [x] Find all references to labels in the vector
+   - [x] Make substitution if the address will fit in the space allowed for the immediate
+   - [x] Make substitution for pseudo-instructions
  - [ ] Convert instructions to binary
  - [ ] Write final binary to file 

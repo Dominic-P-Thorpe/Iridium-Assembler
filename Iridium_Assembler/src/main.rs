@@ -9,16 +9,16 @@ use ascii_converter::string_to_decimals;
 
 
 lazy_static! {
-    static ref RI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$r[0-6]),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+|@[a-zA-Z_]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
-    static ref RRR_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
-    static ref RRI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$r[0-6]),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)|@[a-zA-Z_]+)[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+    static ref RI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)LUI[[:blank:]]*(((\$(zero|r[0-6])),)[[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+|@[a-zA-Z_]+))[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
+    static ref RRR_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADD|NAND|BEQ)[[:blank:]]+(((\$(zero|r[0-6])),)([[:blank:]]*))(((\$(zero|r[0-6])),)([[:blank:]]*))(\$(zero|r[0-6]))([[:blank:]]*)(#([[:blank:]]*)[[:print:]]+)?$").unwrap();
+    static ref RRI_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(ADDI|SW|LW|JAL)[[:blank:]]+(((\$(zero|r[0-6])),)[[:blank:]]*)(((\$(zero|r[0-6])),)[[:blank:]]*)(0*((-|\+)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)|@[a-zA-Z_]+)[[:blank:]]*(#[[:blank:]]*[[:print:]]+)?$").unwrap();
     static ref JAL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)JAL[[:blank:]]*(\$(zero|r[0-6]),)[[:blank:]]*(\$(zero|r[0-6]))[[:blank:]]*(#[[:print:]]*)?$").unwrap();
     static ref NOP_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)NOP([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
     static ref INT_REGEX:Regex = Regex::new(r"[[:blank:]](0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+))").unwrap();
     static ref ELEM_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|((\+|-)?[0-9]+|'[[:ascii:]]')").unwrap();
     static ref CHAR_REGEX:Regex = Regex::new(r"'[[:ascii:]]'").unwrap();
     static ref UINT_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|([0-9]+)").unwrap();
-    static ref DATA_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$r[0-6]),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+|@[a-zA-Z_]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+    static ref DATA_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$(zero|r[0-6])),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+|@[a-zA-Z_]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
     static ref FILL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
     static ref SPACE_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*((\+|-)?[0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
     static ref SCALL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).syscall [0-7]$").unwrap();
@@ -41,14 +41,42 @@ impl fmt::Display for AssemblyError {
 }
 
 
+/// Goes through every line of the program and checks for labels. If it finds a label, it will substitute in the appropriate value in its place.
+///
+/// WARNING: only works if the pseudo-instructions have already been substituted.
+///
+/// Panics if an undefined label is encountered.
+fn substitute_labels(lines:&Vec<String>, label_table:&HashMap<String, i32>) -> Vec<String> {
+    let mut new_lines:Vec<String> = Vec::new();
+    for line in lines {
+        let label:String = match LABEL_ARG_REGEX.find(line) {
+            Some(val) => val.as_str().to_owned(),
+            None => {
+                new_lines.append(&mut vec![line.to_owned()]);
+                continue;
+            }
+        };
+
+        let mut address = *label_table.get(&label[1..]).expect(&format!("Could not find label {} in instruction {}", label, line));
+        if line.contains("ADDI") || line.contains("LW") || line.contains("SW") {
+            address = address & 0x003F;
+        } else if line.contains("LUI") {
+            address = (address & 0xFFC0) >> 6;
+        }
+
+        new_lines.append(&mut vec![line.replace(&label, &address.to_string()).to_owned()]);
+    }
+
+    new_lines
+}
+
+
 /// Goes through every line of the program looking for instructions with a label matching the regex `^[a-zA-Z_]+:`. This is then added to a `HashMap` with the label's
 /// name as the key and its line number as the value - this hashmap is the return value.
 fn generate_label_table(lines:&Vec<String>) -> Result<HashMap<String, i32>, Box<dyn Error>> {
     let mut label_table:HashMap<String, i32> = HashMap::new();
     let mut line_num = 0;
     for line in lines {
-        println!("{:04X}: {}", line_num, line);
-
         match LABEL_REGEX.find(line) {
             Some(val) => { 
                 let label_name = val.as_str().replace(":", "");
@@ -69,6 +97,33 @@ fn generate_label_table(lines:&Vec<String>) -> Result<HashMap<String, i32>, Box<
 }
 
 
+/// Takes an instruction and the valid number of bits the operand can have as arguments. Checks the instruction for any immediates in number, character, and label form and
+/// returns them if there are any, or an `AssemblyError` if not. 
+fn get_imm_for_pseudoinstr(instr:&String, bits:u32) -> Result<String, Box<dyn Error>> {
+    let mut imm = None;
+    let mut label = None;
+    match get_imm_from_instr(&instr, bits, false, false, true).unwrap() {
+        Some(val) => { imm = Some(val) },
+        None => {
+            label = Some (match LABEL_ARG_REGEX.find(&instr) {
+                Some(val) => val.as_str(),
+                None => { return Err(Box::new(AssemblyError(format!("Could not find valid immediate for instruction {}", instr)))) }
+            });
+        }
+    };
+
+    match imm {
+        Some(val) => {
+            return Ok(val.to_string());
+        },
+
+        None => {
+            return Ok(label.expect(&format!("Could not find valid immediate for instruction {}", instr)).to_owned());
+        }
+    }
+}
+
+
 /// Takes a vector of instructions and examines it for any pseudo-instructions. If it finds any, then it replaces it with 1-or-more regular instructions which are inserted
 /// into the vector in its place. The vector at the end of this process is returned.
 fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
@@ -85,20 +140,32 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
             new_vec.remove(index);
             new_vec.insert(index, format!("{}ADD $zero, $zero, $zero", label));
         } else if instr.contains("LLI") {
-            let imm = get_imm_from_instr(&instr, 6, false, false, true).unwrap().unwrap();
+            let imm = get_imm_for_pseudoinstr(&instr, 6).unwrap();
             let register = REGISTER_REGEX.find(&instr).unwrap().as_str();
 
             new_vec.remove(index);
             new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, imm));
         } else if instr.contains("MOVI") {
-            let register = REGISTER_REGEX.find(&instr).unwrap().as_str();
-            let imm:u16 = get_imm_from_instr(&instr, 16, false, false, true).unwrap().unwrap() as u16;
-            let lower_imm = imm & 0x003F;
-            let upper_imm = imm & 0xFFC0;
-
             new_vec.remove(index);
-            new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, lower_imm));
-            new_vec.insert(index + 1, format!("LUI {}, {}", register, upper_imm));
+
+            let register = REGISTER_REGEX.find(&instr).unwrap().as_str();
+            let imm = get_imm_for_pseudoinstr(&instr, 16).unwrap();
+            match convert_to_i64(&imm) {
+                Ok(val) => {
+                    let lower_imm = val as u16 & 0x003F;
+                    let upper_imm = (val as u16 & 0xFFC0) >> 6;
+
+                    println!("{} UI: {} LI: {}\n\n", imm, lower_imm, upper_imm);
+
+                    new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, lower_imm));
+                    new_vec.insert(index + 1, format!("LUI {}, {}", register, upper_imm));
+                },
+
+                Err(_) => {
+                    new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, imm));
+                    new_vec.insert(index + 1, format!("LUI {}, {}", register, imm));
+                }
+            };
 
             index += 1;
         } else if instr.contains(".space") {
@@ -167,9 +234,15 @@ fn convert_to_i64(raw_string:&str) -> Result<i64, Box<dyn Error>> {
     } else {
         imm = match raw_string.parse() {
             Ok(val) => val,
-            Err(_) => match string_to_decimals(&raw_string[1..2]) {
-                Ok(val) => *val.get(0).unwrap() as i64,
-                Err(_) => { return Err(Box::new(AssemblyError(format!("Could not convert from {} to i64", raw_string)))) }
+            Err(_) => {
+                if CHAR_REGEX.find(raw_string) == None {
+                    return Err(Box::new(AssemblyError(format!("Could not convert from {} to i64", raw_string))))
+                }
+
+                match string_to_decimals(&raw_string[1..2]) {
+                    Ok(val) => *val.get(0).unwrap() as i64,
+                    Err(_) => { return Err(Box::new(AssemblyError(format!("Could not convert from {} to i64", raw_string)))) }
+                }
             }
         };
     }
@@ -337,11 +410,12 @@ fn main() {
     println!("Assembling {} --> {}", args[1], args[2]);
 
     let mut lines:Vec<String> = get_line_vector(&args[1]);
+    lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
     validate_assembly_lines(&lines).unwrap();
     let label_table = generate_label_table(&lines).unwrap();
 
-    lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
     lines = substitute_pseudoinstrs(&lines);
+    lines = substitute_labels(&lines, &label_table);
 
     let mut index = 0;
     for line in lines {
@@ -395,14 +469,6 @@ mod tests {
     #[should_panic]
     fn test_invalid_rrr() {
         let lines = vec!["ADD $zero $r1 $r1".to_owned()];
-        validate_assembly_lines(&lines).unwrap();
-    }
-
-
-    #[test]
-    #[should_panic]
-    fn test_write_to_zero_reg() {
-        let lines = vec!["ADD $zero, $r1, $r1".to_owned()];
         validate_assembly_lines(&lines).unwrap();
     }
 
@@ -546,6 +612,7 @@ mod tests {
         let mut lines = get_line_vector("test_files/test_valid_pseudo_subs.asm");
         validate_assembly_lines(&lines).unwrap();
         lines = substitute_pseudoinstrs(&lines);
+        validate_assembly_lines(&lines).unwrap();
 
         assert_eq!(lines[0], "ADDI $r0, $zero, 20");
         assert_eq!(lines[1], "ADDI $r1, $r1, 20");
@@ -554,7 +621,7 @@ mod tests {
         assert_eq!(lines[4], "labelA: ADDI $r2, $r2, 50");
         assert_eq!(lines[5], "labelB: ADD $zero, $zero, $zero");
         assert_eq!(lines[6], "labelC: ADDI $r1, $r1, 48");
-        assert_eq!(lines[7], "LUI $r1, 63488");
+        assert_eq!(lines[7], "LUI $r1, 992");
         assert_eq!(lines.len(), 8);
     }
 
@@ -629,7 +696,7 @@ mod tests {
     fn test_label_table_generation() {
         let mut lines = get_line_vector("test_files/test_label_table_generation.asm");
         validate_assembly_lines(&lines).unwrap();
-        
+
         lines = substitute_pseudoinstrs(&lines);
         lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
         
@@ -652,6 +719,53 @@ mod tests {
         lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
 
         generate_label_table(&lines).unwrap();
+    }
+
+
+    #[test]
+    fn test_label_operands() {
+        let mut lines:Vec<String> = get_line_vector("test_files/test_label_operands.asm");
+        lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
+        validate_assembly_lines(&lines).unwrap();
+
+        lines = substitute_pseudoinstrs(&lines);
+
+        let label_table = generate_label_table(&lines).unwrap();
+        lines = substitute_labels(&lines, &label_table);
+
+        assert_eq!(lines[2], "move: ADDI $r6, $r6, 0");
+        assert_eq!(lines[5], "ADDI $r0, $zero, 2");
+        assert_eq!(lines[77], "after_text: ADDI $r6, $r6, 6");
+        assert_eq!(lines[78], "LUI $r6, 0");
+        assert_eq!(lines[79], "ADDI $r5, $r5, 13");
+        assert_eq!(lines[80], "LUI $r5, 1");
+
+        let mut index = 0;
+        for line in lines {
+            println!("{:04X}: {}", index, line);
+            index += 1;
+        }
+
+        println!("\n\n");
+
+        for line in label_table {
+            println!("{}: {}", line.0, line.1);
+            index += 1;
+        }
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_non_existent_label_operand() {
+        let mut _lines = vec!["MOVI $r1, @nowhere".to_owned()];
+        _lines = _lines.into_iter().filter(|line| !line.is_empty()).collect();
+        validate_assembly_lines(&_lines).unwrap();
+
+        _lines = substitute_pseudoinstrs(&_lines);
+
+        let label_table = generate_label_table(&_lines).unwrap();
+        _lines = substitute_labels(&_lines, &label_table);
     }
 }
 
