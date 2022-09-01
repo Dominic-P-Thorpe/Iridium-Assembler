@@ -20,10 +20,11 @@ lazy_static! {
     static ref UINT_REGEX:Regex = Regex::new(r"0b[01]+|0x[[:xdigit:]]+|([0-9]+)").unwrap();
     static ref DATA_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*)(LLI|MOVI)([[:blank:]]*)(\$(zero|r[0-6])),([[:blank:]]*)(0*([0-9]+|0b[01]+|0x[[:xdigit:]]+|@[a-zA-Z_]+))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
     static ref FILL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).fill[[:blank:]]*('[[:ascii:]]'|(0*((\+|-)?[0-9]+|0b[01]+|0x[[:xdigit:]]+)))([[:blank:]]*)(#[[:print:]]*)?$").unwrap();
+    static ref INSTR_REGEX:Regex = Regex::new("ADDI|NAND|LUI|SW|LW|BEQ|JAL|ADD|.syscall").unwrap();
     static ref SPACE_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).space[[:blank:]]+[0-9]+[[:blank:]]+\[([[:blank:]]*((\+|-)?[0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]'),[[:blank:]]*)*([0-9]+|0x[[:xdigit:]]+|0b[01]+|'[[:ascii:]]')?][[:blank:]]*(#[[:print:]]+)?$").unwrap();
     static ref SCALL_REGEX:Regex = Regex::new(r"^([a-zA-Z_]+:)?([[:blank:]]*).syscall [0-7]$").unwrap();
     static ref LABEL_REGEX:Regex = Regex::new(r"^[a-zA-Z_]+:").unwrap();
-    static ref REGISTER_REGEX:Regex = Regex::new(r"\$r([0-6]|zero)").unwrap();
+    static ref REGISTER_REGEX:Regex = Regex::new(r"\$(r[0-6]|zero)").unwrap();
     static ref TEXT_IMM_REGEX:Regex = Regex::new(r#""[[:ascii:]]+""#).unwrap();
     static ref LABEL_ARG_REGEX:Regex = Regex::new(r"@[a-zA-Z_]+").unwrap();
     static ref PSEUDO_TEXT_REGEX:Regex = Regex::new(r#"^([a-zA-Z_]+:)?([[:blank:]]*).text[[:blank:]]+"[[:ascii:]]+"$"#).unwrap();
@@ -38,6 +39,121 @@ impl fmt::Display for AssemblyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "AssemblyError: {}", self.0)
     }
+}
+
+
+/// Takes a valid instruction and converts it to its binary equivalent as a byte, or returns an `AssemblyError` or panics if it cannot.
+fn convert_instr_to_binary(instr:&String) -> Result<u16, Box<dyn Error>> {
+    let opcodes = HashMap::from([
+        ("ADD", 0x0000), ("ADDI", 0x2000), ("NAND", 0x4000), ("LUI", 0x6000), 
+        ("SW",  0x8000), ("LW",   0xA000), ("BEQ",  0xC000), ("JAL", 0xE000),
+        (".syscall", 0xE000)
+    ]);
+
+    let registers = HashMap::from([
+        ("$zero", 0x00), ("$r0", 0x01), ("$r1", 0x02), ("$r2", 0x03), ("$r3", 0x04), ("$r4", 0x05), ("$r5", 0x06), ("$r6", 0x07)
+    ]);
+    
+    // let opcode:u16 = match opcodes.get(INSTR_REGEX.find(instr).unwrap().as_str()) {
+    let opcode:u16 = match INSTR_REGEX.find(instr) {
+        Some(val) => *opcodes.get(val.as_str()).unwrap(),
+        None => {
+            if !UINT_REGEX.is_match(instr) {
+                return Err(Box::new(AssemblyError(format!("{} is not a valid instruction for compilation. Note pseudoinstructions cannot be present at this stage", instr))));
+            }
+
+            let data_byte = get_imm_from_instr(&instr, 16, false, false, false)?.unwrap() as u16;
+            return Ok(data_byte);
+        }
+    };
+
+    let registers:Vec<u16> = REGISTER_REGEX.find_iter(&instr).map(|reg| *registers.get(reg.as_str()).unwrap() as u16).collect();
+    let instr_binary = match opcode {
+        0x0000 | 0x4000 | 0xC000 => {
+            let mut result = opcode;
+            if registers.len() != 3 {
+                return Err(Box::new(AssemblyError(format!("{} does not have 3 registers as is required", instr))));
+            }
+
+            let (reg_a, reg_b, reg_c) = (
+                registers[0] << 10,
+                registers[1] << 7,
+                registers[2] << 4
+            );
+
+            result |= reg_a;
+            result |= reg_b;
+            result |= reg_c;
+
+            result
+        },
+
+        0x2000 | 0x8000 | 0xA000 => {
+            let mut result = opcode;
+            let immediate = get_imm_from_instr(instr, 7, true, false, false).unwrap().unwrap() as u16 & 0x007F;
+            if registers.len() != 2 {
+                return Err(Box::new(AssemblyError(format!("{} does not have 2 registers as is required", instr))));
+            }
+
+            let (reg_a, reg_b) = (
+                registers[0] << 10,
+                registers[1] << 7
+            );
+
+            result |= reg_a;
+            result |= reg_b;
+            result |= immediate;
+
+            result
+        }
+
+        0x6000 => {
+            let mut result = opcode;
+            let immediate = get_imm_from_instr(instr, 10, false, false, false).unwrap().unwrap() as u16 & 0x03FF;
+            let reg_a = registers[0] << 10;
+            if registers.len() != 1 {
+                return Err(Box::new(AssemblyError(format!("{} does not have 1 register as is required", instr))));
+            }
+
+            result |= reg_a;
+            result |= immediate;
+
+            result
+        }
+
+        0xE000 => {
+            let mut result = opcode;
+            if instr.contains(".syscall") {
+                let immediate = get_imm_from_instr(instr, 7, false, false, false).unwrap().unwrap() as u16 & 0x007F;
+                let reg_a = 0x1400; // 0b0001 0100 0000 0000
+
+                result |= reg_a;
+                result |= immediate;
+            } 
+            
+            else {
+                if registers.len() != 2 {
+                    return Err(Box::new(AssemblyError(format!("{} does not have 2 registers as is required", instr))));
+                }
+    
+                let (reg_a, reg_b) = (
+                    registers[0] << 10,
+                    registers[1] << 7
+                );
+    
+                result |= reg_a;
+                result |= reg_b;
+            }
+
+            result
+        }
+
+        _ => { 
+            return Err(Box::new(AssemblyError(format!("{} does not contain a valid opcode", instr)))) 
+        }
+    };
+
+    Ok(instr_binary)
 }
 
 
@@ -155,8 +271,6 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
                     let lower_imm = val as u16 & 0x003F;
                     let upper_imm = (val as u16 & 0xFFC0) >> 6;
 
-                    println!("{} UI: {} LI: {}\n\n", imm, lower_imm, upper_imm);
-
                     new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, lower_imm));
                     new_vec.insert(index + 1, format!("LUI {}, {}", register, upper_imm));
                 },
@@ -268,7 +382,11 @@ fn get_imm_from_instr(instr:&str, bits:u32, signed:bool, accept_char:bool, accep
         None => {}
     };
 
-    let imm_str:&str = match INT_REGEX.find_iter(&instr).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
+    // prepended space needed to ensure that regex can tell the difference between a number such as the one6 in "$r6" and an actual immediate as Rust Regex does not support
+    // negative lookbehinds to check for "$r".
+    let instr_with_prepended_space = " ".to_owned() + instr;
+
+    let imm_str:&str = match INT_REGEX.find_iter(&instr_with_prepended_space).map(|num| num.as_str()).collect::<Vec<&str>>().get(0) {
         Some(val) => val.trim(),
         None => {
             if !accept_char {
@@ -419,14 +537,7 @@ fn main() {
 
     let mut index = 0;
     for line in lines {
-        println!("{:04X}: {}", index, line);
-        index += 1;
-    }
-
-    println!("\n\n");
-
-    for line in label_table {
-        println!("{}: {}", line.0, line.1);
+        println!("0x{:04X}:\t {:32} \t 0x{:04X}", index, line, convert_instr_to_binary(&line).unwrap());
         index += 1;
     }
 }
@@ -739,19 +850,6 @@ mod tests {
         assert_eq!(lines[78], "LUI $r6, 0");
         assert_eq!(lines[79], "ADDI $r5, $r5, 13");
         assert_eq!(lines[80], "LUI $r5, 1");
-
-        let mut index = 0;
-        for line in lines {
-            println!("{:04X}: {}", index, line);
-            index += 1;
-        }
-
-        println!("\n\n");
-
-        for line in label_table {
-            println!("{}: {}", line.0, line.1);
-            index += 1;
-        }
     }
 
 
@@ -766,6 +864,41 @@ mod tests {
 
         let label_table = generate_label_table(&_lines).unwrap();
         _lines = substitute_labels(&_lines, &label_table);
+    }
+
+
+    #[test]
+    fn test_convert_to_binary() {
+        assert_eq!(convert_instr_to_binary(&"ADD  $r0, $zero, $r1".to_owned()).unwrap(), 0x0420_u16);
+        assert_eq!(convert_instr_to_binary(&"NAND $r2, $r3,   $r4".to_owned()).unwrap(), 0x4E50_u16);
+        assert_eq!(convert_instr_to_binary(&"BEQ  $r5, $zero, $r6".to_owned()).unwrap(), 0xD870_u16);
+
+        assert_eq!(convert_instr_to_binary(&"ADDI $r1, $zero,  7".to_owned()).unwrap(),  0x2807_u16);
+        assert_eq!(convert_instr_to_binary(&"ADDI $r1, $zero, -7".to_owned()).unwrap(),  0x2879_u16);
+        assert_eq!(convert_instr_to_binary(&"SW   $r1, $r2,   30".to_owned()).unwrap(),  0x899E_u16);
+        assert_eq!(convert_instr_to_binary(&"LW   $r6, $r5,  -10".to_owned()).unwrap(),  0xBF76_u16);
+
+        assert_eq!(convert_instr_to_binary(&"0x0455".to_owned()).unwrap(), 0x0455_u16);
+        assert_eq!(convert_instr_to_binary(&"10000".to_owned()).unwrap(),  0x2710_u16);
+
+        assert_eq!(convert_instr_to_binary(&"LUI $r0, 500".to_owned()).unwrap(),  0x65F4_u16);
+
+        assert_eq!(convert_instr_to_binary(&".syscall 5".to_owned()).unwrap(),  0xF405_u16);
+        assert_eq!(convert_instr_to_binary(&"JAL $r5, $r6".to_owned()).unwrap(),  0xFB80_u16);
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_convert_invalid_instr_to_binary() {
+        convert_instr_to_binary(&"INVALID  $r0, $zero, $r1".to_owned()).unwrap();
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_convert_invalid_register_to_binary() {
+        convert_instr_to_binary(&"ADD  $r0, $r9, $r1".to_owned()).unwrap();
     }
 }
 

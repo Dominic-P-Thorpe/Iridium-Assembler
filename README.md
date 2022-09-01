@@ -23,7 +23,7 @@ The instruction set is laid out in the table below:
 | NAND | 010    | RRR-Type  | NAND $r0, $r0, $r1  | Ra = ¬(Rb & Rc)                   |
 | LUI  | 011    | RI-Type   | LUI $r0, 0x1DE      | Bits 7-10 of Ra = Imm             |
 | SW   | 100    | RRI-Type  | SW $r0, $r1, 50     | Value of RAM at Rb + Imm = Ra     |
-| LW   | 101    | RRI-Type  | LW $r0, $r1, .loc   | Ra = value of RAM at Rb + Imm     |
+| LW   | 101    | RRI-Type  | LW $r0, $r1, 20     | Ra = value of RAM at Rb + Imm     |
 | BEQ  | 110    | RRR-Type  | BEQ $r0, $r1, $r2   | If Ra == Rb, branch to addr in Rc |
 | JAL  | 111    | RRI-Type* | JAL $r7, $r1        | Branch to addr in Rb, Ra = PC + 1 |
 
