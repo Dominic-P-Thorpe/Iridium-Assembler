@@ -19,7 +19,7 @@ checksum = "a73cd7fe90cd95612f7486889bbe1110689e03f745d9ceac276d4cfe6c4574e9"
 
 [[package]]
 name = "iridium_assembler"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "ascii_converter",
  "lazy_static",

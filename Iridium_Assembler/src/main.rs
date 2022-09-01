@@ -2,7 +2,7 @@ use std::{ env, fmt };
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::OpenOptions;
-use std::io::{ BufReader, BufRead };
+use std::io::{ BufReader, BufRead, Write };
 use lazy_static::lazy_static;
 use regex::Regex;
 use ascii_converter::string_to_decimals;
@@ -523,6 +523,22 @@ fn get_line_vector(filename: &str) -> Vec<String> {
 }
 
 
+/// Takes a vector containing the processed and assembled instructions and writes them to the specified file as 2 bytes (16 bits), creating the file if it does not
+/// already exist and then returns the number of bytes written.
+fn write_assembled_bytes(filename: &str, instrs: Vec<u16>) -> usize {
+    let mut output_file = OpenOptions::new().write(true).create(true).open(filename).expect(&format!("ERROR: Could not open file: {}", filename));
+
+    let mut bytes:Vec<u8> = Vec::new();
+    for instr in instrs {
+        bytes.push(((instr & 0xFF00) >> 8) as u8);
+        bytes.push((instr & 0x00FF) as u8);
+    }
+
+    output_file.write_all(&bytes.as_slice()).unwrap();
+    return bytes.len();
+}
+
+
 fn main() {
     let args:Vec<String> = env::args().collect();
     println!("Assembling {} --> {}", args[1], args[2]);
@@ -535,11 +551,16 @@ fn main() {
     lines = substitute_pseudoinstrs(&lines);
     lines = substitute_labels(&lines, &label_table);
 
+    let mut assembled_lines = Vec::new();
     let mut index = 0;
     for line in lines {
+        assembled_lines.push(convert_instr_to_binary(&line).unwrap());
         println!("0x{:04X}:\t {:32} \t 0x{:04X}", index, line, convert_instr_to_binary(&line).unwrap());
         index += 1;
     }
+
+    let num_bytes = write_assembled_bytes(&args[2], assembled_lines);
+    println!("Successfully assembled {} bytes", num_bytes);
 }
 
 

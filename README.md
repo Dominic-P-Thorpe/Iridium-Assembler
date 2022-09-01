@@ -151,5 +151,5 @@ Multiplication can be achieved by repeated addition, bit-testing, and left-shift
    - [x] Find all references to labels in the vector
    - [x] Make substitution if the address will fit in the space allowed for the immediate
    - [x] Make substitution for pseudo-instructions
- - [ ] Convert instructions to binary
- - [ ] Write final binary to file 
+ - [x] Convert instructions to binary
+ - [x] Write final binary to file 
