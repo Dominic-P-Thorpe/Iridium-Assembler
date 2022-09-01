@@ -289,9 +289,9 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
             let total_elems = ELEM_REGEX.find_iter(&instr).map(|item| convert_to_i64(item.as_str()).unwrap() as u16).collect::<Vec<u16>>()[0];
 
             for elem_index in 0..total_elems {
-                let mut value_to_insert = format!("0x{:04X}", 0);
+                let mut value_to_insert = format!(".fill 0x{:04X}", 0);
                 if elem_index < defined_elems.len() as u16 {
-                    value_to_insert = format!("0x{:04X}", defined_elems[elem_index as usize]);
+                    value_to_insert = format!(".fill 0x{:04X}", defined_elems[elem_index as usize]);
                 }
 
                 if elem_index == 0 {
@@ -777,11 +777,11 @@ mod tests {
         lines = substitute_pseudoinstrs(&lines);
 
         assert_eq!(lines[0], "ADD $r0, $r1, $r2");
-        assert_eq!(lines[1], "start: 0x0064");
-        assert_eq!(lines[2], "0xFFFE");
-        assert_eq!(lines[3], "0x0061");
-        assert_eq!(lines[4], "0x0000");
-        assert_eq!(lines[5], "0x0000");
+        assert_eq!(lines[1], "start: .fill 0x0064");
+        assert_eq!(lines[2], ".fill 0xFFFE");
+        assert_eq!(lines[3], ".fill 0x0061");
+        assert_eq!(lines[4], ".fill 0x0000");
+        assert_eq!(lines[5], ".fill 0x0000");
         assert_eq!(lines[6], "ADD $r0, $r1, $r3");
     }
 
