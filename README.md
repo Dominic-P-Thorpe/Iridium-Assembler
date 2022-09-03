@@ -12,7 +12,7 @@ The ISA used is a RISC architecture with only 8 instructions and 4 pseudo-instru
 
 Instructions fall into 3 categories: RRR-type, RRI-type, and RI-type, which are formatted as follows:
 
-![Type formats](format_diagrams.svg)
+![Type formats](format_diagrams.jpg)
 
 The instruction set is laid out in the table below:
 

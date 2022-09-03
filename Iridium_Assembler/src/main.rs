@@ -271,12 +271,13 @@ fn substitute_pseudoinstrs(lines:&Vec<String>) -> Vec<String> {
                     let lower_imm = val as u16 & 0x003F;
                     let upper_imm = (val as u16 & 0xFFC0) >> 6;
 
-                    new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, lower_imm));
+                    new_vec.insert(index, format!("{}ADDI {}, $zero, {}", label, register, lower_imm));
                     new_vec.insert(index + 1, format!("LUI {}, {}", register, upper_imm));
                 },
 
                 Err(_) => {
-                    new_vec.insert(index, format!("{0}ADDI {1}, {1}, {2}", label, register, imm));
+                    println!("Imm: {}", imm);
+                    new_vec.insert(index, format!("{}ADDI {}, $zero, {}", label, register, imm));
                     new_vec.insert(index + 1, format!("LUI {}, {}", register, imm));
                 }
             };
@@ -546,9 +547,9 @@ fn main() {
     let mut lines:Vec<String> = get_line_vector(&args[1]);
     lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
     validate_assembly_lines(&lines).unwrap();
-    let label_table = generate_label_table(&lines).unwrap();
-
     lines = substitute_pseudoinstrs(&lines);
+
+    let label_table = generate_label_table(&lines).unwrap();
     lines = substitute_labels(&lines, &label_table);
 
     let mut assembled_lines = Vec::new();
@@ -752,7 +753,7 @@ mod tests {
         assert_eq!(lines[3], "ADDI $r2, $zero, 20");
         assert_eq!(lines[4], "labelA: ADDI $r2, $r2, 50");
         assert_eq!(lines[5], "labelB: ADD $zero, $zero, $zero");
-        assert_eq!(lines[6], "labelC: ADDI $r1, $r1, 48");
+        assert_eq!(lines[6], "labelC: ADDI $r1, $zero, 48");
         assert_eq!(lines[7], "LUI $r1, 992");
         assert_eq!(lines.len(), 8);
     }
@@ -865,11 +866,11 @@ mod tests {
         let label_table = generate_label_table(&lines).unwrap();
         lines = substitute_labels(&lines, &label_table);
 
-        assert_eq!(lines[2], "move: ADDI $r6, $r6, 0");
+        assert_eq!(lines[2], "move: ADDI $r6, $zero, 0");
         assert_eq!(lines[5], "ADDI $r0, $zero, 2");
-        assert_eq!(lines[77], "after_text: ADDI $r6, $r6, 6");
+        assert_eq!(lines[77], "after_text: ADDI $r6, $zero, 6");
         assert_eq!(lines[78], "LUI $r6, 0");
-        assert_eq!(lines[79], "ADDI $r5, $r5, 13");
+        assert_eq!(lines[79], "ADDI $r5, $zero, 13");
         assert_eq!(lines[80], "LUI $r5, 1");
     }
 
@@ -920,6 +921,27 @@ mod tests {
     #[should_panic]
     fn test_convert_invalid_register_to_binary() {
         convert_instr_to_binary(&"ADD  $r0, $r9, $r1".to_owned()).unwrap();
+    }
+
+
+    #[test]
+    fn test_file_bios() {
+        let mut lines:Vec<String> = get_line_vector("test_files/test_file_bios.asm");
+        lines = lines.into_iter().filter(|line| !line.is_empty()).collect();
+        validate_assembly_lines(&lines).unwrap();
+
+        lines = substitute_pseudoinstrs(&lines);
+        let label_table = generate_label_table(&lines).unwrap();
+
+        lines = substitute_labels(&lines, &label_table);
+
+        let mut assembled_lines = Vec::new();
+        for line in lines {
+            assembled_lines.push(convert_instr_to_binary(&line).unwrap());
+        }
+
+        assert_eq!(assembled_lines[2], 0x280B);
+        assert_eq!(assembled_lines[3], 0x6800);
     }
 }
 
